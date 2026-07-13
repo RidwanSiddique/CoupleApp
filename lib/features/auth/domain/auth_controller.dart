@@ -9,12 +9,15 @@ import '../../../core/crypto/signal_keys.dart';
 import '../../../shared/providers/supabase_provider.dart';
 import '../data/auth_repository.dart';
 
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(ref.read(supabaseClientProvider));
-});
-
 final keyVaultProvider = Provider<KeyVault>((ref) {
   return KeyVault(ref.read(secureStorageProvider));
+});
+
+final authRepositoryProvider = Provider<AuthRepository>((ref) {
+  return AuthRepository(
+    ref.read(supabaseClientProvider),
+    ref.read(keyVaultProvider),
+  );
 });
 
 /// Broadcasts the current [Session] (null when signed out).

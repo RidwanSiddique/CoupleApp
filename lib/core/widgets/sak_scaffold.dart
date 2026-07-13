@@ -1,49 +1,68 @@
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
-import 'hijri_date.dart';
 
 class SakScaffold extends StatelessWidget {
   const SakScaffold({
     super.key,
     required this.child,
     this.title,
-    this.showDualDate = false,
+    this.subtitle,
     this.actions,
     this.leading,
     this.padded = true,
+    this.centerTitle = false,
+    this.showAppBar = true,
+    this.floatingActionButton,
+    this.backgroundColor,
   });
 
   final Widget child;
   final String? title;
-  final bool showDualDate;
+  final Widget? subtitle;
   final List<Widget>? actions;
   final Widget? leading;
   final bool padded;
+  final bool centerTitle;
+  final bool showAppBar;
+  final Widget? floatingActionButton;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final needsAppBar = showAppBar &&
+        (title != null || subtitle != null || actions != null || leading != null);
+
     return Scaffold(
-      appBar: (title == null && !showDualDate && actions == null)
-          ? null
-          : AppBar(
+      backgroundColor: backgroundColor,
+      appBar: needsAppBar
+          ? AppBar(
               leading: leading,
               actions: actions,
-              titleSpacing: SakSpace.lg,
+              titleSpacing: leading == null ? SakSpace.lg : 0,
+              centerTitle: centerTitle,
+              toolbarHeight: subtitle != null ? 76 : kToolbarHeight,
               title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: centerTitle
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (title != null)
-                    Text(
-                      title!,
-                      style: Theme.of(context).textTheme.titleLarge,
+                    Text(title!, style: theme.textTheme.titleLarge),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    DefaultTextStyle.merge(
+                      style: theme.textTheme.bodySmall,
+                      child: subtitle!,
                     ),
-                  if (showDualDate) const HijriDate(),
+                  ],
                 ],
               ),
-              toolbarHeight: showDualDate ? 72 : kToolbarHeight,
-            ),
+            )
+          : null,
+      floatingActionButton: floatingActionButton,
       body: SafeArea(
         child: Padding(
           padding: padded

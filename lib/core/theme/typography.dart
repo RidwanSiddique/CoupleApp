@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'tokens.dart';
 
-/// InstrumentSerif (display) · Inter (body) · Amiri (Arabic).
-/// Bundled locally under [assets/fonts/] so the app works fully offline
-/// on every platform (no network fetch, no macOS-sandbox surprises).
+/// Space Grotesk (display) · Inter (body) · Amiri (Arabic).
+/// Bundled locally under [assets/fonts/].
 class SakTypography {
   const SakTypography._();
 
-  static const String _display = 'InstrumentSerif';
-  static const String _body = 'Inter';
-  static const String _arabic = 'Amiri';
+  static const String display = 'SpaceGrotesk';
+  static const String body = 'Inter';
+  static const String arabic = 'Amiri';
 
   static TextTheme build({required Brightness brightness}) {
     final baseColor = brightness == Brightness.dark
@@ -21,77 +20,113 @@ class SakTypography {
         : SakColors.textSecondary;
 
     return TextTheme(
+      // Display — Space Grotesk, tight-leading, negative tracking
       displayLarge: TextStyle(
-        fontFamily: _display,
-        fontSize: 44,
-        height: 1.1,
-        letterSpacing: -0.5,
+        fontFamily: display,
+        fontSize: 48,
+        fontWeight: FontWeight.w500,
+        height: 1.05,
+        letterSpacing: -1.2,
         color: baseColor,
       ),
       displayMedium: TextStyle(
-        fontFamily: _display,
-        fontSize: 34,
-        height: 1.15,
+        fontFamily: display,
+        fontSize: 36,
+        fontWeight: FontWeight.w500,
+        height: 1.1,
+        letterSpacing: -0.8,
         color: baseColor,
       ),
       displaySmall: TextStyle(
-        fontFamily: _display,
+        fontFamily: display,
         fontSize: 28,
-        height: 1.2,
+        fontWeight: FontWeight.w500,
+        height: 1.15,
+        letterSpacing: -0.4,
+        color: baseColor,
+      ),
+      headlineLarge: TextStyle(
+        fontFamily: display,
+        fontSize: 24,
+        fontWeight: FontWeight.w500,
+        letterSpacing: -0.2,
         color: baseColor,
       ),
       headlineMedium: TextStyle(
-        fontFamily: _display,
-        fontSize: 22,
+        fontFamily: display,
+        fontSize: 20,
+        fontWeight: FontWeight.w500,
         color: baseColor,
       ),
+
+      // Titles — Inter, semibold
       titleLarge: TextStyle(
-        fontFamily: _body,
-        fontSize: 18,
+        fontFamily: body,
+        fontSize: 17,
         fontWeight: FontWeight.w600,
+        letterSpacing: -0.1,
         color: baseColor,
       ),
       titleMedium: TextStyle(
-        fontFamily: _body,
+        fontFamily: body,
         fontSize: 15,
         fontWeight: FontWeight.w600,
         color: baseColor,
       ),
+
+      // Body — Inter, relaxed
       bodyLarge: TextStyle(
-        fontFamily: _body,
+        fontFamily: body,
         fontSize: 16,
-        height: 1.45,
+        height: 1.5,
         color: baseColor,
       ),
       bodyMedium: TextStyle(
-        fontFamily: _body,
+        fontFamily: body,
         fontSize: 14,
-        height: 1.45,
+        height: 1.5,
         color: baseColor,
       ),
       bodySmall: TextStyle(
-        fontFamily: _body,
+        fontFamily: body,
         fontSize: 12,
+        height: 1.4,
         color: subColor,
       ),
+
+      // Labels — Inter, tuned for buttons + tiny UI
       labelLarge: TextStyle(
-        fontFamily: _body,
-        fontSize: 14,
+        fontFamily: body,
+        fontSize: 15,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.1,
         color: baseColor,
+      ),
+      labelMedium: TextStyle(
+        fontFamily: body,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.1,
+        color: baseColor,
+      ),
+      labelSmall: TextStyle(
+        fontFamily: body,
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.5,
+        color: subColor,
       ),
     );
   }
 
   /// Amiri for Arabic text (Qur'an verses, du'a, calligraphy contexts).
-  static TextStyle arabic({
+  static TextStyle arabicText({
     double fontSize = 22,
     Color? color,
     FontWeight fontWeight = FontWeight.w400,
   }) {
     return TextStyle(
-      fontFamily: _arabic,
+      fontFamily: arabic,
       fontSize: fontSize,
       color: color,
       fontWeight: fontWeight,

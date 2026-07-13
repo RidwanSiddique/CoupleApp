@@ -10,9 +10,13 @@ final pairingRepositoryProvider = Provider<PairingRepository>((ref) {
 });
 
 /// The current user's couple (null when unpaired). Live via realtime.
+///
+/// Emits null immediately when there is no session, so downstream consumers
+/// (router redirect, home screen) see a resolved value rather than staying
+/// in a permanent loading state after sign-out.
 final currentCoupleProvider = StreamProvider<Couple?>((ref) {
   final session = ref.watch(authSessionProvider).asData?.value;
-  if (session == null) return const Stream.empty();
+  if (session == null) return Stream.value(null);
   return ref
       .read(pairingRepositoryProvider)
       .watchCurrentCouple(session.user.id);

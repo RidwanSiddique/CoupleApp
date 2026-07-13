@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/failures.dart';
+import '../../../core/motion/motion.dart';
+import '../../../core/platform/haptics.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/widgets.dart';
 import '../domain/pairing_providers.dart';
@@ -15,31 +18,26 @@ class JoinTab extends ConsumerStatefulWidget {
 }
 
 class _JoinTabState extends ConsumerState<JoinTab> {
-  final _controller = TextEditingController();
+  final _slots = SakDigitSlotsController();
   bool _busy = false;
   String? _error;
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final code = _controller.text.trim().toUpperCase();
-    if (code.length != 6) {
-      setState(() => _error = 'Enter the 6-character code.');
-      return;
-    }
+  Future<void> _submit(String code) async {
+    if (code.length != 6) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await ref.read(pairingRepositoryProvider).acceptInvite(code);
-      // currentCoupleProvider stream will flip; router will redirect.
+      unawaited(SakHaptics.heartbeats());
     } on AppFailure catch (e) {
-      setState(() => _error = e.message);
+      _slots.shake();
+      unawaited(SakHaptics.medium());
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      _slots.shake();
+      if (mounted) setState(() => _error = 'Could not join. Try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -48,69 +46,95 @@ class _JoinTabState extends ConsumerState<JoinTab> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(SakSpace.lg),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: SakSpace.xxl),
-            Icon(
-              Icons.qr_code_scanner_outlined,
-              size: 48,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(height: SakSpace.lg),
-            Text(
-              'Enter your spouse\'s code',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge,
-            ),
-            const SizedBox(height: SakSpace.xl),
-            TextField(
-              controller: _controller,
-              textAlign: TextAlign.center,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(6),
-                UpperCaseTextFormatter(),
-              ],
-              style: theme.textTheme.displayMedium?.copyWith(letterSpacing: 4),
-              decoration: const InputDecoration(hintText: 'ABC123'),
-              onSubmitted: (_) => _submit(),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: SakSpace.md),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: SakSpace.xl),
-            SakButton(
-              label: 'Join',
-              onPressed: _submit,
-              loading: _busy,
-              expand: true,
-            ),
-          ],
-        ),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(
+        horizontal: SakSpace.lg,
+        vertical: SakSpace.xl,
       ),
-    );
-  }
-}
-
-class UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return TextEditingValue(
-      text: newValue.text.toUpperCase(),
-      selection: newValue.selection,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: SakSpace.xl),
+          SakEnter(
+            child: Center(
+              child: SakBreathing(
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.qr_code_2_rounded,
+                    color: theme.colorScheme.onSecondary,
+                    size: 32,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: SakSpace.lg),
+          SakEnter(
+            delay: const Duration(milliseconds: 80),
+            child: Text(
+              "Enter your spouse's code",
+              style: theme.textTheme.headlineMedium,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: SakSpace.xs),
+          SakEnter(
+            delay: const Duration(milliseconds: 140),
+            child: Text(
+              'Six characters. Not case-sensitive.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: SakSpace.xxxl),
+          SakEnter(
+            delay: const Duration(milliseconds: 220),
+            child: SakDigitSlots(
+              length: 6,
+              mode: SakDigitMode.alphanumericUppercase,
+              controller: _slots,
+              onCompleted: _submit,
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: SakSpace.lg),
+            SakInlineError(message: _error!),
+          ],
+          const SizedBox(height: SakSpace.xxl),
+          if (_busy)
+            Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                ),
+              ),
+            )
+          else
+            SakEnter(
+              delay: const Duration(milliseconds: 300),
+              child: Text(
+                'Joins automatically when you finish typing.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

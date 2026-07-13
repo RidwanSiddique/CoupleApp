@@ -1,11 +1,13 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/crypto/key_vault.dart';
 import '../../../core/errors/failures.dart';
 
 class AuthRepository {
-  AuthRepository(this._client);
+  AuthRepository(this._client, this._vault);
 
   final SupabaseClient _client;
+  final KeyVault _vault;
 
   Session? get currentSession => _client.auth.currentSession;
   User? get currentUser => _client.auth.currentUser;
@@ -68,5 +70,10 @@ class AuthRepository {
     }
   }
 
-  Future<void> signOut() => _client.auth.signOut();
+  Future<void> signOut() async {
+    await _client.auth.signOut();
+    // Wipe Signal privates: a different user may sign in on this device,
+    // and the plan calls for a per-user identity.
+    await _vault.wipe();
+  }
 }

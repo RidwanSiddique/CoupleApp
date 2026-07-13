@@ -8,35 +8,47 @@ import '../../features/auth/presentation/sign_in_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/pairing/domain/pairing_providers.dart';
 import '../../features/pairing/presentation/pair_screen.dart';
+import '../motion/motion.dart';
+import '../theme/tokens.dart';
+import '../theme/typography.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/splash',
     refreshListenable: _RouterRefresh(ref),
+    errorBuilder: (context, state) => _RouteErrorScreen(error: state.error),
     redirect: (context, state) {
       final session = ref.read(authSessionProvider);
       final couple = ref.read(currentCoupleProvider);
 
       final path = state.uri.path;
       final signedIn = session.asData?.value != null;
-      final paired = couple.asData?.value != null;
 
       final isSplash = path == '/splash';
       final isAuthRoute = path.startsWith('/auth');
       final isPair = path == '/pair';
 
-      // Still resolving auth on first frame
-      if (session.isLoading && isSplash) return null;
+      // Still resolving auth: stay on splash.
+      if (!session.hasValue) {
+        return isSplash ? null : '/splash';
+      }
 
       if (!signedIn) {
         return isAuthRoute ? null : '/auth/sign-in';
       }
 
+      // Wait for couple stream to have a resolved value before deciding
+      // between /pair and /home — otherwise the user briefly sees /pair.
+      if (!couple.hasValue) {
+        return isSplash ? null : '/splash';
+      }
+
+      final paired = couple.value != null;
+
       if (!paired) {
         return isPair ? null : '/pair';
       }
 
-      // Signed in + paired: land on home unless already elsewhere
       if (isSplash || isAuthRoute || isPair) return '/home';
       return null;
     },
@@ -68,12 +80,117 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class _SplashScreen extends StatelessWidget {
+/// Splash: the calligraphy fades and slightly rises. A hero tag ties the
+/// mark to the sign-in screen so it flies across the transition.
+class _SplashScreen extends StatefulWidget {
   const _SplashScreen();
   @override
+  State<_SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<_SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: SakMotion.slow,
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
+    final theme = Theme.of(context);
+    final anim =
+        CurvedAnimation(parent: _controller, curve: SakMotion.enter);
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Center(
+        child: AnimatedBuilder(
+          animation: anim,
+          builder: (context, child) => Opacity(
+            opacity: anim.value.clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(0, (1 - anim.value) * -8),
+              child: child,
+            ),
+          ),
+          child: Hero(
+            tag: 'sakinah-mark',
+            flightShuttleBuilder: (_, _, _, _, _) => Material(
+              type: MaterialType.transparency,
+              child: Text(
+                'سَكِينَة',
+                style: SakTypography.arabicText(
+                  fontSize: 42,
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            child: Material(
+              type: MaterialType.transparency,
+              child: Text(
+                'سَكِينَة',
+                style: SakTypography.arabicText(
+                  fontSize: 42,
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RouteErrorScreen extends StatelessWidget {
+  const _RouteErrorScreen({this.error});
+  final Exception? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(SakSpace.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline_rounded,
+                  size: 32, color: theme.colorScheme.error),
+              const SizedBox(height: SakSpace.md),
+              Text(
+                "Something went wrong",
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: SakSpace.xs),
+              Text(
+                error?.toString() ?? 'Unknown route error',
+                style: theme.textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: SakSpace.xl),
+              TextButton(
+                onPressed: () => GoRouter.of(context).go('/splash'),
+                child: const Text('Back to start'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

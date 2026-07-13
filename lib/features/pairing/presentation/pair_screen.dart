@@ -7,11 +7,31 @@ import '../../auth/domain/auth_controller.dart';
 import 'invite_tab.dart';
 import 'join_tab.dart';
 
-class PairScreen extends ConsumerWidget {
+class PairScreen extends ConsumerStatefulWidget {
   const PairScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PairScreen> createState() => _PairScreenState();
+}
+
+class _PairScreenState extends ConsumerState<PairScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final email = ref
         .watch(authSessionProvider)
@@ -20,80 +40,105 @@ class PairScreen extends ConsumerWidget {
         ?.user
         .email;
 
-    return DefaultTabController(
-      length: 2,
-      child: SakScaffold(
-        padded: false,
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              if (value == 'logout') {
-                ref.read(authRepositoryProvider).signOut();
-              }
-            },
-            itemBuilder: (_) => [
-              if (email != null)
-                PopupMenuItem<String>(
-                  enabled: false,
-                  child: Text(
-                    'Signed in as $email',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout_outlined, size: 18),
-                    SizedBox(width: SakSpace.sm),
-                    Text('Sign out'),
-                  ],
+    return SakScaffold(
+      padded: false,
+      title: 'Sakīnah',
+      actions: [
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_horiz),
+          onSelected: (v) {
+            if (v == 'logout') {
+              ref.read(authRepositoryProvider).signOut();
+            }
+          },
+          itemBuilder: (_) => [
+            if (email != null)
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Text(
+                  'Signed in as $email',
+                  style: theme.textTheme.bodySmall,
                 ),
               ),
-            ],
-          ),
-        ],
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                SakSpace.lg,
-                SakSpace.xl,
-                SakSpace.lg,
-                SakSpace.md,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            const PopupMenuItem<String>(
+              value: 'logout',
+              child: Row(
                 children: [
-                  Text(
-                    'Create your space of two',
-                    style: theme.textTheme.displaySmall,
-                  ),
-                  const SizedBox(height: SakSpace.sm),
-                  Text(
-                    'Share a code with your spouse, or enter theirs. Only the two of you will be in this space.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-            const TabBar(
-              tabs: [
-                Tab(text: 'Invite'),
-                Tab(text: 'Join'),
-              ],
-            ),
-            const Expanded(
-              child: TabBarView(
-                children: [
-                  InviteTab(),
-                  JoinTab(),
+                  Icon(Icons.logout_outlined, size: 18),
+                  SizedBox(width: SakSpace.sm),
+                  Text('Sign out'),
                 ],
               ),
             ),
           ],
         ),
+        const SizedBox(width: SakSpace.sm),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              SakSpace.lg,
+              SakSpace.xl,
+              SakSpace.lg,
+              SakSpace.lg,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'A space of two',
+                  style: theme.textTheme.displaySmall,
+                ),
+                const SizedBox(height: SakSpace.xs),
+                Text(
+                  'Share a code with your spouse, or enter theirs. Only the two of you will be here.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: SakSpace.lg),
+            child: Container(
+              padding: const EdgeInsets.all(SakSpace.xs),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(SakRadius.pill),
+              ),
+              child: TabBar(
+                controller: _tabs,
+                indicator: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(SakRadius.pill),
+                  boxShadow: SakElevation.subtle,
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
+                labelColor: theme.colorScheme.onSurface,
+                unselectedLabelColor:
+                    theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                labelStyle: theme.textTheme.labelLarge,
+                unselectedLabelStyle: theme.textTheme.labelLarge,
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStatePropertyAll(Colors.transparent),
+                tabs: const [
+                  Tab(text: 'Invite'),
+                  Tab(text: 'Join'),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: const [InviteTab(), JoinTab()],
+            ),
+          ),
+        ],
       ),
     );
   }
