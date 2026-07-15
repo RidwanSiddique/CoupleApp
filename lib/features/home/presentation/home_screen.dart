@@ -7,7 +7,12 @@ import '../../../core/theme/typography.dart';
 import '../../../core/time/prayer_engine.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../auth/domain/auth_controller.dart';
+import '../../daily/presentation/question_card.dart';
+import '../../daily/presentation/verse_card.dart';
+import '../../duas/presentation/dua_card.dart';
+import '../../gratitude/presentation/gratitude_card.dart';
 import '../../pairing/domain/pairing_providers.dart';
+import '../../prayer_log/presentation/prayer_log_card.dart';
 import '../domain/home_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -33,7 +38,6 @@ class HomeScreen extends ConsumerWidget {
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // Header: date + crescent + overflow menu
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
                 SakSpace.lg,
@@ -52,9 +56,7 @@ class HomeScreen extends ConsumerWidget {
                             .withValues(alpha: 0.75),
                       ),
                       const SizedBox(width: SakSpace.sm),
-                      Expanded(
-                        child: HijriDate(date: now),
-                      ),
+                      Expanded(child: HijriDate(date: now)),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_horiz),
                         onSelected: (v) {
@@ -81,7 +83,6 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
 
-            // Greeting
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: SakSpace.lg),
               sliver: SliverToBoxAdapter(
@@ -98,9 +99,8 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
 
-            const SliverPadding(
-              padding: EdgeInsets.only(top: SakSpace.xxl),
-              sliver: SliverToBoxAdapter(child: SizedBox.shrink()),
+            const SliverToBoxAdapter(
+              child: SizedBox(height: SakSpace.xxl),
             ),
 
             // Next prayer card
@@ -112,63 +112,39 @@ class HomeScreen extends ConsumerWidget {
                   child: profileReady
                       ? _NextPrayerCard(
                           next: nextPrayer,
-                          hasLocation: own.asData?.value?.latitude != null &&
-                              own.asData?.value?.longitude != null,
+                          hasLocation:
+                              own.asData?.value?.latitude != null &&
+                                  own.asData?.value?.longitude != null,
                         )
                       : const _NextPrayerSkeleton(),
                 ),
               ),
             ),
 
-            // Coming-next section
+            // Feature cards
             SliverPadding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: SakSpace.lg),
-              sliver: SliverToBoxAdapter(
-                child: SakEnter(
-                  delay: const Duration(milliseconds: 460),
-                  child: SakSectionHeader(
-                    title: 'Today, together',
-                    subtitle:
-                        'Coming next: shared prayer log, dua list, and a daily prompt.',
-                  ),
-                ),
+              padding: const EdgeInsets.fromLTRB(
+                SakSpace.lg,
+                SakSpace.xl,
+                SakSpace.lg,
+                SakSpace.xl,
               ),
-            ),
-
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: SakSpace.lg),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   SakStagger(
-                    initialDelay: const Duration(milliseconds: 540),
-                    stagger: const Duration(milliseconds: 70),
+                    initialDelay: const Duration(milliseconds: 460),
+                    stagger: const Duration(milliseconds: 90),
+                    slideFrom: 16,
                     children: const [
-                      _ComingSoonTile(
-                        icon: Icons.check_circle_outline_rounded,
-                        title: 'Shared prayer log',
-                        hint:
-                            "Check in for each ṣalāh. See your spouse's too.",
-                      ),
+                      PrayerLogCard(),
                       SizedBox(height: SakSpace.md),
-                      _ComingSoonTile(
-                        icon: Icons.menu_book_outlined,
-                        title: 'Verse of the day',
-                        hint: 'A curated verse for spouses, every morning.',
-                      ),
+                      VerseCard(),
                       SizedBox(height: SakSpace.md),
-                      _ComingSoonTile(
-                        icon: Icons.forum_outlined,
-                        title: 'Private chat',
-                        hint:
-                            'End-to-end encrypted messages and voice notes.',
-                      ),
+                      QuestionCard(),
                       SizedBox(height: SakSpace.md),
-                      _ComingSoonTile(
-                        icon: Icons.favorite_outline_rounded,
-                        title: 'Gratitude for your spouse',
-                        hint: 'One thing you appreciated today.',
-                      ),
+                      GratitudeCard(),
+                      SizedBox(height: SakSpace.md),
+                      DuaCard(),
                     ],
                   ),
                   const SizedBox(height: SakSpace.xxxl),
@@ -185,7 +161,7 @@ class HomeScreen extends ConsumerWidget {
                     child: Text(
                       couple.asData?.value == null
                           ? 'Getting things ready…'
-                          : 'You are paired.',
+                          : 'Together, today.',
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
@@ -199,7 +175,6 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Greeting reveal: first line "$greeting," then the name after a delay.
 class _Greeting extends StatelessWidget {
   const _Greeting({
     required this.greeting,
@@ -433,72 +408,6 @@ class _NextPrayerSkeleton extends StatelessWidget {
           SakShimmerBox(width: 200, height: 28, radius: SakRadius.sm),
           SizedBox(height: SakSpace.lg),
           SakShimmerBox(width: 80, height: 22, radius: SakRadius.xs),
-        ],
-      ),
-    );
-  }
-}
-
-class _ComingSoonTile extends StatelessWidget {
-  const _ComingSoonTile({
-    required this.icon,
-    required this.title,
-    required this.hint,
-  });
-
-  final IconData icon;
-  final String title;
-  final String hint;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SakCard(
-      variant: SakCardVariant.tonal,
-      padding: const EdgeInsets.all(SakSpace.lg),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(SakRadius.md),
-            ),
-            child: Icon(icon, size: 18, color: theme.colorScheme.primary),
-          ),
-          const SizedBox(width: SakSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: theme.textTheme.titleMedium),
-                const SizedBox(height: 2),
-                Text(
-                  hint,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: SakSpace.sm,
-              vertical: 2,
-            ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(SakRadius.sm),
-            ),
-            child: Text(
-              'Soon',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                letterSpacing: 0.6,
-              ),
-            ),
-          ),
         ],
       ),
     );

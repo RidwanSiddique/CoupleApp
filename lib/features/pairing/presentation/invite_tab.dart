@@ -260,28 +260,31 @@ class _ActiveInvite extends StatelessWidget {
             size: 220,
             strokeWidth: 2,
             child: SakBreathing(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < chars.length; i++)
-                    SakEnter(
-                      delay: Duration(milliseconds: 60 + i * 40),
-                      duration: SakMotion.standard,
-                      slideFrom: 8,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 1.5),
-                        child: Text(
-                          chars[i],
-                          style: theme.textTheme.displayLarge?.copyWith(
-                            fontSize: 40,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.primary,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < chars.length; i++)
+                      SakEnter(
+                        delay: Duration(milliseconds: 60 + i * 40),
+                        duration: SakMotion.standard,
+                        slideFrom: 8,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                          child: Text(
+                            chars[i],
+                            style: theme.textTheme.displayLarge?.copyWith(
+                              fontSize: 40,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

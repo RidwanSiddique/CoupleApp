@@ -21,12 +21,20 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 });
 
 /// Broadcasts the current [Session] (null when signed out).
+///
+/// The initial value is emitted via a microtask so this provider never
+/// synchronously invalidates downstream subscribers during a subscribe/flush
+/// cycle. That protects against "setState during build" cascades when
+/// route transitions cause `ConsumerStatefulElement._updateTickerMode` to
+/// resume subscriptions.
 final authSessionProvider = StreamProvider<Session?>((ref) {
   final repo = ref.read(authRepositoryProvider);
   final controller = StreamController<Session?>();
-  controller.add(repo.currentSession);
+  scheduleMicrotask(() {
+    if (!controller.isClosed) controller.add(repo.currentSession);
+  });
   final sub = repo.authStateChanges().listen((state) {
-    controller.add(state.session);
+    if (!controller.isClosed) controller.add(state.session);
   });
   ref.onDispose(() {
     sub.cancel();
