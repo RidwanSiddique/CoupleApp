@@ -27,6 +27,15 @@ final prayerLogSelectedDateProvider =
   PrayerLogSelectedDate.new,
 );
 
+/// Prayers may be logged/corrected for today and yesterday only.
+bool isLoggableDate(DateTime date, {DateTime? now}) {
+  final n = now ?? DateTime.now();
+  final today = DateTime(n.year, n.month, n.day);
+  final d = DateTime(date.year, date.month, date.day);
+  final diff = today.difference(d).inDays;
+  return diff == 0 || diff == 1;
+}
+
 /// Live stream of prayer logs for the couple + selected date (both spouses).
 final prayerLogsForDayProvider =
     StreamProvider<List<PrayerLogEntry>>((ref) {

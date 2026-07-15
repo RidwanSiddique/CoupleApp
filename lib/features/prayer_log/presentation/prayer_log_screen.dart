@@ -31,6 +31,9 @@ class PrayerLogScreen extends ConsumerWidget {
 
     final today = DateTime.now();
     final isToday = _sameDay(selectedDate, today);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final isYesterday = _sameDay(selectedDate, yesterday);
+    final loggable = isLoggableDate(selectedDate);
 
     return SakScaffold(
       title: 'Prayer log',
@@ -74,6 +77,16 @@ class PrayerLogScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              _DayToggle(
+                isToday: isToday,
+                isYesterday: isYesterday,
+                onSelect: (d) {
+                  ref.read(prayerLogSelectedDateProvider.notifier).set(d);
+                },
+                today: today,
+                yesterday: yesterday,
+              ),
+              const SizedBox(height: SakSpace.lg),
               SakEnter(
                 child: _TogetherStrip(
                   ownCount: summary.ownCount,
@@ -93,7 +106,7 @@ class PrayerLogScreen extends ConsumerWidget {
                       padding: const EdgeInsets.only(bottom: SakSpace.md),
                       child: _PrayerRow(
                         prayer: p,
-                        isEditable: isToday || selectedDate.isBefore(today),
+                        isEditable: loggable,
                         ownLog: _findLog(logs, ownProfile?.id, p),
                         spouseLog: _findLog(logs, spouseProfile?.id, p),
                         onOwnToggle: (newStatus) async {
@@ -163,6 +176,94 @@ class PrayerLogScreen extends ConsumerWidget {
         status: newStatus,
       );
     }
+    ref.read(prayerLogRefreshTickProvider.notifier).state++;
+  }
+}
+
+class _DayToggle extends StatelessWidget {
+  const _DayToggle({
+    required this.isToday,
+    required this.isYesterday,
+    required this.onSelect,
+    required this.today,
+    required this.yesterday,
+  });
+
+  final bool isToday;
+  final bool isYesterday;
+  final ValueChanged<DateTime> onSelect;
+  final DateTime today;
+  final DateTime yesterday;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: _DayToggleButton(
+            label: 'Today',
+            selected: isToday,
+            onTap: () => onSelect(today),
+            theme: theme,
+          ),
+        ),
+        const SizedBox(width: SakSpace.sm),
+        Expanded(
+          child: _DayToggleButton(
+            label: 'Yesterday',
+            selected: isYesterday,
+            onTap: () => onSelect(yesterday),
+            theme: theme,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DayToggleButton extends StatelessWidget {
+  const _DayToggleButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.theme,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: selected ? null : onTap,
+      child: AnimatedContainer(
+        duration: SakMotion.standard,
+        curve: SakMotion.enter,
+        padding: const EdgeInsets.symmetric(vertical: SakSpace.sm),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(SakRadius.md),
+          border: selected
+              ? null
+              : Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: selected
+                ? theme.colorScheme.onPrimary
+                : theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
   }
 }
 
