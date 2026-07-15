@@ -32,6 +32,12 @@ bool isExempt(List<CycleRecord> cycles, DateTime day) {
   return false;
 }
 
+/// Pure-Dart reference implementation of the scoring day-walk. The
+/// `get_couple_scoreboard` Postgres RPC (see
+/// `supabase/migrations/20260715000005_scoreboard_rpc.sql`) mirrors this
+/// logic exactly (newest→oldest, exempt days skipped/frozen, a non-exempt
+/// <5-prayed day breaks the current streak); this function is no longer on
+/// the couple-scoreboard call path but remains the unit-tested spec for it.
 ScoreResult computeScore({
   required List<DayLog> logs,
   required List<CycleRecord> cycles,
