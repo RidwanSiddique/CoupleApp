@@ -13,6 +13,7 @@ import '../../duas/presentation/dua_card.dart';
 import '../../gratitude/presentation/gratitude_card.dart';
 import '../../pairing/domain/pairing_providers.dart';
 import '../../prayer_log/presentation/prayer_log_card.dart';
+import '../../scoring/presentation/scoreboard_card.dart';
 import '../domain/home_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -137,6 +138,8 @@ class HomeScreen extends ConsumerWidget {
                     slideFrom: 16,
                     children: const [
                       PrayerLogCard(),
+                      SizedBox(height: SakSpace.md),
+                      ScoreboardCard(),
                       SizedBox(height: SakSpace.md),
                       VerseCard(),
                       SizedBox(height: SakSpace.md),
