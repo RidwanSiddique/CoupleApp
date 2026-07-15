@@ -1,0 +1,81 @@
+// lib/features/settings/presentation/settings_screen.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../auth/domain/auth_controller.dart';
+import '../../cycle/domain/cycle_providers.dart';
+import '../domain/settings_providers.dart';
+
+class SettingsScreen extends ConsumerWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isWife = ref.watch(isWifeProvider);
+    final shareDefault = ref.watch(shareCycleByDefaultProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(children: [
+        const _SectionHeader('Privacy & Sharing'),
+        if (isWife)
+          SwitchListTile(
+            title: const Text('Share cycle with spouse by default'),
+            subtitle: const Text(
+                'When off, your spouse only sees that your score is resting.'),
+            value: shareDefault,
+            onChanged: (v) async {
+              final session = ref.read(authSessionProvider).asData?.value;
+              if (session == null) return;
+              final current =
+                  ref.read(preferencesProvider).asData?.value ?? const {};
+              await ref.read(preferencesRepositoryProvider).setKey(
+                    userId: session.user.id,
+                    key: 'share_cycle_default',
+                    value: v,
+                    current: Map<String, dynamic>.from(current),
+                  );
+              // Apply to an active cycle immediately, if any.
+              final active = ref.read(activeCycleProvider);
+              if (active != null) {
+                await ref.read(cycleRepositoryProvider).setVisibility(
+                    recordId: active.id,
+                    visibility: v ? 'shared' : 'private');
+              }
+              ref.invalidate(preferencesProvider);
+            },
+          )
+        else
+          const ListTile(
+            title: Text('Privacy'),
+            subtitle: Text('Sharing controls appear here as features are added.'),
+          ),
+        const _SectionHeader('Notifications'),
+        const ListTile(
+            title: Text('Reminders'),
+            subtitle: Text('Prayer and cycle reminders (coming soon).')),
+        const _SectionHeader('Security'),
+        const ListTile(
+            title: Text('App lock'),
+            subtitle: Text('Biometric lock (coming soon).')),
+        const _SectionHeader('Account'),
+        ListTile(
+          leading: const Icon(Icons.logout),
+          title: const Text('Sign out'),
+          onTap: () => ref.read(authRepositoryProvider).signOut(),
+        ),
+      ]),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.label);
+  final String label;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+        child: Text(label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary)),
+      );
+}
