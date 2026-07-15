@@ -5,9 +5,16 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/domain/auth_controller.dart';
 import '../../features/auth/presentation/otp_screen.dart';
 import '../../features/auth/presentation/sign_in_screen.dart';
+import '../../features/daily/presentation/question_screen.dart';
+import '../../features/daily/presentation/verse_reader.dart';
+import '../../features/duas/presentation/dua_list_screen.dart';
+import '../../features/gratitude/presentation/gratitude_screen.dart';
+import '../../features/home/domain/home_providers.dart';
 import '../../features/home/presentation/home_screen.dart';
+import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/pairing/domain/pairing_providers.dart';
 import '../../features/pairing/presentation/pair_screen.dart';
+import '../../features/prayer_log/presentation/prayer_log_screen.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -27,6 +34,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isSplash = path == '/splash';
       final isAuthRoute = path.startsWith('/auth');
       final isPair = path == '/pair';
+      final isOnboarding = path == '/onboarding';
 
       // Still resolving auth: stay on splash.
       if (!session.hasValue) {
@@ -36,6 +44,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (!signedIn) {
         return isAuthRoute ? null : '/auth/sign-in';
       }
+
+      // Wait for the own profile to have a resolved value before deciding
+      // whether onboarding is needed — otherwise the user briefly sees the
+      // wrong screen.
+      final profile = ref.read(ownProfileProvider);
+      if (!profile.hasValue) {
+        return isSplash ? null : '/splash';
+      }
+
+      if (ref.read(needsOnboardingProvider)) {
+        return isOnboarding ? null : '/onboarding';
+      }
+
+      if (isOnboarding) return '/pair';
 
       // Wait for couple stream to have a resolved value before deciding
       // between /pair and /home — otherwise the user briefly sees /pair.
@@ -69,12 +91,38 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/onboarding',
+        builder: (_, _) => const OnboardingScreen(),
+      ),
+      GoRoute(
         path: '/pair',
         builder: (_, _) => const PairScreen(),
       ),
       GoRoute(
         path: '/home',
         builder: (_, _) => const HomeScreen(),
+        routes: [
+          GoRoute(
+            path: 'prayer',
+            builder: (_, _) => const PrayerLogScreen(),
+          ),
+          GoRoute(
+            path: 'verse',
+            builder: (_, _) => const VerseReaderScreen(),
+          ),
+          GoRoute(
+            path: 'question',
+            builder: (_, _) => const QuestionScreen(),
+          ),
+          GoRoute(
+            path: 'gratitude',
+            builder: (_, _) => const GratitudeScreen(),
+          ),
+          GoRoute(
+            path: 'duas',
+            builder: (_, _) => const DuaListScreen(),
+          ),
+        ],
       ),
     ],
   );
@@ -199,6 +247,7 @@ class _RouteErrorScreen extends StatelessWidget {
 class _RouterRefresh extends ChangeNotifier {
   _RouterRefresh(this._ref) {
     _ref.listen(authSessionProvider, (_, _) => notifyListeners());
+    _ref.listen(ownProfileProvider, (_, _) => notifyListeners());
     _ref.listen(currentCoupleProvider, (_, _) => notifyListeners());
   }
   final Ref _ref;

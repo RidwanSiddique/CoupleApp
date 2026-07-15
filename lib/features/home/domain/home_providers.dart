@@ -20,6 +20,14 @@ final ownProfileProvider = FutureProvider<UserProfile?>((ref) async {
   return UserProfile.fromRow(Map<String, dynamic>.from(row));
 });
 
+/// True when signed in but the profile has no gender yet (onboarding pending).
+final needsOnboardingProvider = Provider<bool>((ref) {
+  final session = ref.watch(authSessionProvider).asData?.value;
+  if (session == null) return false;
+  final profile = ref.watch(ownProfileProvider).asData?.value;
+  return profile != null && profile.gender == null;
+});
+
 /// Spouse profile (the other member of the couple).
 final spouseProfileProvider = FutureProvider<UserProfile?>((ref) async {
   final session = ref.watch(authSessionProvider).asData?.value;
