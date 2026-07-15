@@ -14,22 +14,33 @@ class CareScreen extends ConsumerWidget {
     final async = ref.watch(careTipsProvider);
     return Scaffold(
       appBar: AppBar(title: Text(isWife ? 'Caring for you' : 'Caring for her')),
-      body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Could not load: $e')),
-        data: (tips) => ListView(padding: const EdgeInsets.all(16), children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(10)),
-            child: const Text('General guidance, not medical advice; '
-                'consult a doctor for health concerns.',
-                style: TextStyle(fontStyle: FontStyle.italic)),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10)),
+              child: const Text('General guidance, not medical advice; '
+                  'consult a doctor for health concerns.',
+                  style: TextStyle(fontStyle: FontStyle.italic)),
+            ),
           ),
-          const SizedBox(height: 12),
-          for (final t in tips) _TipCard(tip: t),
-        ]),
+          Expanded(
+            child: async.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Could not load: $e')),
+              data: (tips) => ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  for (final t in tips) _TipCard(tip: t),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
