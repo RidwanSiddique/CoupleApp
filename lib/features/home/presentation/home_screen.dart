@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/tokens.dart';
@@ -7,6 +8,7 @@ import '../../../core/theme/typography.dart';
 import '../../../core/time/prayer_engine.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../auth/domain/auth_controller.dart';
+import '../../cycle/domain/cycle_providers.dart';
 import '../../daily/presentation/question_card.dart';
 import '../../daily/presentation/verse_card.dart';
 import '../../duas/presentation/dua_card.dart';
@@ -26,6 +28,7 @@ class HomeScreen extends ConsumerWidget {
     final spouse = ref.watch(spouseProfileProvider);
     final couple = ref.watch(currentCoupleProvider);
     final nextPrayer = ref.watch(nextPrayerProvider);
+    final isWife = ref.watch(isWifeProvider);
 
     final now = DateTime.now();
     final greeting = greetingForHour(now.hour);
@@ -58,6 +61,11 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       const SizedBox(width: SakSpace.sm),
                       Expanded(child: HijriDate(date: now)),
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: 'Settings',
+                        onPressed: () => context.go('/home/settings'),
+                      ),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_horiz),
                         onSelected: (v) {
@@ -136,18 +144,24 @@ class HomeScreen extends ConsumerWidget {
                     initialDelay: const Duration(milliseconds: 460),
                     stagger: const Duration(milliseconds: 90),
                     slideFrom: 16,
-                    children: const [
-                      PrayerLogCard(),
-                      SizedBox(height: SakSpace.md),
-                      ScoreboardCard(),
-                      SizedBox(height: SakSpace.md),
-                      VerseCard(),
-                      SizedBox(height: SakSpace.md),
-                      QuestionCard(),
-                      SizedBox(height: SakSpace.md),
-                      GratitudeCard(),
-                      SizedBox(height: SakSpace.md),
-                      DuaCard(),
+                    children: [
+                      const PrayerLogCard(),
+                      const SizedBox(height: SakSpace.md),
+                      const ScoreboardCard(),
+                      const SizedBox(height: SakSpace.md),
+                      if (isWife) ...[
+                        const _CycleTile(),
+                        const SizedBox(height: SakSpace.md),
+                      ],
+                      _CareTile(isWife: isWife),
+                      const SizedBox(height: SakSpace.md),
+                      const VerseCard(),
+                      const SizedBox(height: SakSpace.md),
+                      const QuestionCard(),
+                      const SizedBox(height: SakSpace.md),
+                      const GratitudeCard(),
+                      const SizedBox(height: SakSpace.md),
+                      const DuaCard(),
                     ],
                   ),
                   const SizedBox(height: SakSpace.xxxl),
@@ -390,6 +404,109 @@ class _NextPrayerCard extends StatelessWidget {
         'isha' => 'ٱلْعِشَاء',
         _ => '',
       };
+}
+
+class _CycleTile extends StatelessWidget {
+  const _CycleTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SakCard(
+      variant: SakCardVariant.tonal,
+      onTap: () => context.go('/home/cycle'),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(SakRadius.md),
+            ),
+            child: Icon(
+              Icons.favorite_border,
+              size: 20,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: SakSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Cycle', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  'Track your cycle and see predictions.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right,
+            color: scheme.onSurface.withValues(alpha: 0.4),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CareTile extends StatelessWidget {
+  const _CareTile({required this.isWife});
+
+  final bool isWife;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final label = isWife ? 'Caring for you' : 'Caring for her';
+    return SakCard(
+      variant: SakCardVariant.tonal,
+      onTap: () => context.go('/home/care'),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(SakRadius.md),
+            ),
+            child: Icon(
+              Icons.spa_outlined,
+              size: 20,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: SakSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  'Guidance and gentle tips.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right,
+            color: scheme.onSurface.withValues(alpha: 0.4),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _NextPrayerSkeleton extends StatelessWidget {

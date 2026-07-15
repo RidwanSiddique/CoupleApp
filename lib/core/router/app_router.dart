@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/domain/auth_controller.dart';
 import '../../features/auth/presentation/otp_screen.dart';
 import '../../features/auth/presentation/sign_in_screen.dart';
+import '../../features/care/presentation/care_screen.dart';
+import '../../features/cycle/presentation/cycle_screen.dart';
 import '../../features/daily/presentation/question_screen.dart';
 import '../../features/daily/presentation/verse_reader.dart';
 import '../../features/duas/presentation/dua_list_screen.dart';
@@ -15,6 +17,7 @@ import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/pairing/domain/pairing_providers.dart';
 import '../../features/pairing/presentation/pair_screen.dart';
 import '../../features/prayer_log/presentation/prayer_log_screen.dart';
+import '../../features/settings/presentation/settings_screen.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
@@ -121,6 +124,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'duas',
             builder: (_, _) => const DuaListScreen(),
+          ),
+          GoRoute(
+            path: 'cycle',
+            builder: (_, _) => const CycleScreen(),
+          ),
+          GoRoute(
+            path: 'care',
+            builder: (_, _) => const CareScreen(),
+          ),
+          GoRoute(
+            path: 'settings',
+            builder: (_, _) => const SettingsScreen(),
           ),
         ],
       ),
