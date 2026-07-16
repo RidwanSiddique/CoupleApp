@@ -8,7 +8,6 @@ import '../../../core/theme/typography.dart';
 import '../../../core/time/prayer_engine.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../auth/domain/auth_controller.dart';
-import '../../cycle/domain/cycle_providers.dart';
 import '../../daily/presentation/question_card.dart';
 import '../../daily/presentation/verse_card.dart';
 import '../../duas/presentation/dua_card.dart';
@@ -30,7 +29,11 @@ class HomeScreen extends ConsumerWidget {
     final spouse = ref.watch(spouseProfileProvider);
     final couple = ref.watch(currentCoupleProvider);
     final nextPrayer = ref.watch(nextPrayerProvider);
-    final isWife = ref.watch(isWifeProvider);
+    // Derive from the profile already watched above rather than watching the
+    // separate isWifeProvider — watching both the async profile and a sync
+    // provider derived from it in one build re-enters and throws
+    // "setState during build".
+    final isWife = own.asData?.value?.gender == 'female';
     final locationState = ref.watch(locationControllerProvider);
 
     // Surface a location-capture failure as a snackbar.
