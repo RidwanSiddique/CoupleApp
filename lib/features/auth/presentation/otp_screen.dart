@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/env.dart';
 import '../../../core/errors/failures.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/platform/haptics.dart';
@@ -26,7 +27,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   String? _error;
 
   Future<void> _verify(String code) async {
-    if (code.length != 6) return;
+    if (code.length != Env.otpLength) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -88,7 +89,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 ),
                 const SizedBox(height: SakSpace.xxxl),
                 SakDigitSlots(
-                  length: 6,
+                  length: Env.otpLength,
                   mode: SakDigitMode.numeric,
                   controller: _slots,
                   onCompleted: _verify,

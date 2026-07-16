@@ -21,5 +21,11 @@ class Env {
     defaultValue: '',
   );
 
+  /// Email OTP length. Must match the Supabase project's "Email OTP Length"
+  /// (GoTrue default is 6). Override via
+  /// `--dart-define=OTP_LENGTH=8` (or the dart-define file) if your project
+  /// issues a different length.
+  static const otpLength = int.fromEnvironment('OTP_LENGTH', defaultValue: 6);
+
   static bool get isConfigured => supabaseAnonKey.isNotEmpty;
 }
