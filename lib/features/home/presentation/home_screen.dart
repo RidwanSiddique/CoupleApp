@@ -13,6 +13,8 @@ import '../../daily/presentation/question_card.dart';
 import '../../daily/presentation/verse_card.dart';
 import '../../duas/presentation/dua_card.dart';
 import '../../gratitude/presentation/gratitude_card.dart';
+import '../../location/data/location_service.dart';
+import '../../location/domain/location_providers.dart';
 import '../../pairing/domain/pairing_providers.dart';
 import '../../prayer_log/presentation/prayer_log_card.dart';
 import '../../scoring/presentation/scoreboard_card.dart';
@@ -29,6 +31,17 @@ class HomeScreen extends ConsumerWidget {
     final couple = ref.watch(currentCoupleProvider);
     final nextPrayer = ref.watch(nextPrayerProvider);
     final isWife = ref.watch(isWifeProvider);
+    final locationState = ref.watch(locationControllerProvider);
+
+    // Surface a location-capture failure as a snackbar.
+    ref.listen(locationControllerProvider, (prev, next) {
+      final err = next.error;
+      if (next.hasError && err is LocationFailure) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(err.userMessage)));
+      }
+    });
 
     final now = DateTime.now();
     final greeting = greetingForHour(now.hour);
@@ -124,6 +137,10 @@ class HomeScreen extends ConsumerWidget {
                           hasLocation:
                               own.asData?.value?.latitude != null &&
                                   own.asData?.value?.longitude != null,
+                          busy: locationState.isLoading,
+                          onSetLocation: () => ref
+                              .read(locationControllerProvider.notifier)
+                              .captureAndSave(),
                         )
                       : const _NextPrayerSkeleton(),
                 ),
@@ -264,10 +281,17 @@ class _GreetingSkeleton extends StatelessWidget {
 }
 
 class _NextPrayerCard extends StatelessWidget {
-  const _NextPrayerCard({required this.next, required this.hasLocation});
+  const _NextPrayerCard({
+    required this.next,
+    required this.hasLocation,
+    this.busy = false,
+    this.onSetLocation,
+  });
 
   final ScheduledPrayer? next;
   final bool hasLocation;
+  final bool busy;
+  final VoidCallback? onSetLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +301,7 @@ class _NextPrayerCard extends StatelessWidget {
     if (!hasLocation) {
       return SakCard(
         variant: SakCardVariant.tonal,
+        onTap: busy ? null : onSetLocation,
         child: Row(
           children: [
             Container(
@@ -302,16 +327,25 @@ class _NextPrayerCard extends StatelessWidget {
                       style: theme.textTheme.titleMedium),
                   const SizedBox(height: 2),
                   Text(
-                    'So we can show your next prayer time.',
+                    busy
+                        ? 'Getting your location…'
+                        : 'So we can show your next prayer time.',
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: scheme.onSurface.withValues(alpha: 0.4),
-            ),
+            if (busy)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(
+                Icons.chevron_right,
+                color: scheme.onSurface.withValues(alpha: 0.4),
+              ),
           ],
         ),
       );

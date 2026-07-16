@@ -54,6 +54,8 @@ dependencies:
   path_provider: ^2.1.6
   path: ^1.9.1
   libsignal_protocol_dart: ^0.8.2
+  geolocator: ^14.0.3
+  flutter_timezone: ^5.1.0
 
 dev_dependencies:
   flutter_test:
