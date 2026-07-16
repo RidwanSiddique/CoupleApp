@@ -22,9 +22,71 @@ class OtpScreen extends ConsumerStatefulWidget {
 }
 
 class _OtpScreenState extends ConsumerState<OtpScreen> {
+  // Matches GoTrue's default per-email resend interval, so the button
+  // re-enables roughly when the server will accept another request.
+  static const _resendCooldownSeconds = 60;
+
   final _slots = SakDigitSlotsController();
   bool _busy = false;
   String? _error;
+  bool _resending = false;
+  int _secondsLeft = 0;
+  Timer? _cooldownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // A code was just sent when this screen opened; start the cooldown.
+    _startCooldown();
+  }
+
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startCooldown() {
+    _cooldownTimer?.cancel();
+    setState(() => _secondsLeft = _resendCooldownSeconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        _secondsLeft--;
+        if (_secondsLeft <= 0) t.cancel();
+      });
+    });
+  }
+
+  Future<void> _resend() async {
+    if (_secondsLeft > 0 || _resending) return;
+    setState(() {
+      _resending = true;
+      _error = null;
+    });
+    try {
+      await ref.read(authRepositoryProvider).sendEmailOtp(widget.email);
+      _slots.clear();
+      unawaited(SakHaptics.light());
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('New code sent.')));
+      }
+      _startCooldown();
+    } on AppFailure catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not resend the code. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _resending = false);
+    }
+  }
 
   Future<void> _verify(String code) async {
     if (code.length != Env.otpLength) return;
@@ -123,6 +185,31 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
+                const SizedBox(height: SakSpace.lg),
+                Center(
+                  child: _secondsLeft > 0
+                      ? Text(
+                          'Resend code in ${_secondsLeft}s',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.5),
+                          ),
+                        )
+                      : TextButton(
+                          onPressed: _resending ? null : _resend,
+                          child: _resending
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: theme.colorScheme.primary
+                                        .withValues(alpha: 0.5),
+                                  ),
+                                )
+                              : const Text('Resend code'),
+                        ),
+                ),
               ],
             ),
           ),
