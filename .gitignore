@@ -46,3 +46,6 @@ app.*.map.json
 
 # Supabase generated cache
 supabase/.temp/
+
+# Cloud Supabase dart-define config (real values)
+config/supabase.cloud.json
