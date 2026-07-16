@@ -36,7 +36,7 @@ begin
     where v_uid in (member_a, member_b) and status = 'active' limit 1;
   if not found then raise exception 'not_paired'; end if;
 
-  if p_window_days < 1 then p_window_days := 30; end if;
+  p_window_days := least(greatest(coalesce(p_window_days, 30), 1), 366);
   v_to      := current_date - 1;                  -- completed days only
   v_from    := v_to - (p_window_days - 1);
   v_members := array[v_couple.member_a, v_couple.member_b];

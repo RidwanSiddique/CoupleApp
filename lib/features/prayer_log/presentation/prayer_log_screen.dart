@@ -12,10 +12,26 @@ import '../../../core/theme/typography.dart';
 import '../../../core/time/prayer_engine.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../auth/domain/auth_controller.dart';
+import '../../cycle/domain/cycle_providers.dart';
 import '../../home/domain/home_providers.dart';
 import '../../pairing/domain/pairing_providers.dart';
 import '../domain/prayer_log_providers.dart';
+import '../../../shared/models/cycle_record.dart';
 import '../../../shared/models/prayer_log.dart';
+
+/// Whether the CURRENT USER's prayer tiles are excused for [selectedDate].
+///
+/// True only when she is the wife AND [selectedDate] falls within one of her
+/// own cycle records (`CycleRecord.isActiveOn`). Pure/side-effect-free so it
+/// can be unit-tested independently of the widget tree.
+bool isSelectedDateExemptForCurrentUser({
+  required bool isWife,
+  required List<CycleRecord> ownCycleHistory,
+  required DateTime selectedDate,
+}) {
+  if (!isWife) return false;
+  return ownCycleHistory.any((r) => r.isActiveOn(selectedDate));
+}
 
 class PrayerLogScreen extends ConsumerWidget {
   const PrayerLogScreen({super.key});
@@ -28,12 +44,20 @@ class PrayerLogScreen extends ConsumerWidget {
     final ownProfile = ref.watch(ownProfileProvider).asData?.value;
     final spouseProfile = ref.watch(spouseProfileProvider).asData?.value;
     final logsAsync = ref.watch(prayerLogsForDayProvider);
+    final isWife = ref.watch(isWifeProvider);
+    final ownCycleHistory =
+        ref.watch(ownCycleHistoryProvider).asData?.value ?? const [];
 
     final today = DateTime.now();
     final isToday = _sameDay(selectedDate, today);
     final yesterday = today.subtract(const Duration(days: 1));
     final isYesterday = _sameDay(selectedDate, yesterday);
     final loggable = isLoggableDate(selectedDate);
+    final isExempt = isSelectedDateExemptForCurrentUser(
+      isWife: isWife,
+      ownCycleHistory: ownCycleHistory,
+      selectedDate: selectedDate,
+    );
 
     return SakScaffold(
       title: 'Prayer log',
@@ -96,6 +120,10 @@ class PrayerLogScreen extends ConsumerWidget {
                   spouseName: spouseProfile?.displayName ?? 'Your spouse',
                 ),
               ),
+              if (isExempt) ...[
+                const SizedBox(height: SakSpace.lg),
+                const _ExemptionNote(),
+              ],
               const SizedBox(height: SakSpace.xl),
               SakStagger(
                 initialDelay: const Duration(milliseconds: 80),
@@ -106,7 +134,8 @@ class PrayerLogScreen extends ConsumerWidget {
                       padding: const EdgeInsets.only(bottom: SakSpace.md),
                       child: _PrayerRow(
                         prayer: p,
-                        isEditable: loggable,
+                        isEditable: loggable && !isExempt,
+                        ownExempt: isExempt,
                         ownLog: _findLog(logs, ownProfile?.id, p),
                         spouseLog: _findLog(logs, spouseProfile?.id, p),
                         onOwnToggle: (newStatus) async {
@@ -352,6 +381,28 @@ class _TogetherStrip extends StatelessWidget {
   }
 }
 
+class _ExemptionNote extends StatelessWidget {
+  const _ExemptionNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SakCard(
+      variant: SakCardVariant.tonal,
+      padding: const EdgeInsets.symmetric(
+        horizontal: SakSpace.lg,
+        vertical: SakSpace.md,
+      ),
+      child: Text(
+        'Resting — prayers are excused 🤍',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+        ),
+      ),
+    );
+  }
+}
+
 class _PrayerRow extends StatelessWidget {
   const _PrayerRow({
     required this.prayer,
@@ -359,6 +410,7 @@ class _PrayerRow extends StatelessWidget {
     required this.spouseLog,
     required this.isEditable,
     required this.onOwnToggle,
+    this.ownExempt = false,
   });
 
   final Prayer prayer;
@@ -366,6 +418,7 @@ class _PrayerRow extends StatelessWidget {
   final PrayerLogEntry? spouseLog;
   final bool isEditable;
   final ValueChanged<PrayerStatus?> onOwnToggle;
+  final bool ownExempt;
 
   @override
   Widget build(BuildContext context) {
@@ -382,34 +435,37 @@ class _PrayerRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      prayer.displayName,
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    const SizedBox(width: SakSpace.sm),
-                    Text(
-                      _arabicName(prayer),
-                      style: SakTypography.arabicText(
-                        fontSize: 18,
-                        color: theme.colorScheme.onSurface
-                            .withValues(alpha: 0.55),
+            child: Opacity(
+              opacity: ownExempt ? 0.4 : 1.0,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        prayer.displayName,
+                        style: theme.textTheme.titleLarge,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _footerLabel(ownLog, spouseLog),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
+                      const SizedBox(width: SakSpace.sm),
+                      Text(
+                        _arabicName(prayer),
+                        style: SakTypography.arabicText(
+                          fontSize: 18,
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _footerLabel(ownLog, spouseLog),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
           ),
           if (spouseDone)
@@ -422,11 +478,14 @@ class _PrayerRow extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
             ),
-          _CheckToggle(
-            checked: ownDone,
-            enabled: isEditable,
-            onChanged: () =>
-                onOwnToggle(ownDone ? null : PrayerStatus.prayed),
+          Opacity(
+            opacity: ownExempt ? 0.4 : 1.0,
+            child: _CheckToggle(
+              checked: ownDone,
+              enabled: isEditable,
+              onChanged: () =>
+                  onOwnToggle(ownDone ? null : PrayerStatus.prayed),
+            ),
           ),
         ],
       ),

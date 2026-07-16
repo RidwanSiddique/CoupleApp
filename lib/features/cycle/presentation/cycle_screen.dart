@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../auth/domain/auth_controller.dart';
 import '../../pairing/domain/pairing_providers.dart';
+import '../../settings/domain/settings_providers.dart';
 import '../domain/cycle_providers.dart';
 
 class CycleScreen extends ConsumerWidget {
@@ -50,10 +51,12 @@ class CycleScreen extends ConsumerWidget {
                   final session = ref.read(authSessionProvider).asData?.value;
                   final couple = ref.read(currentCoupleProvider).asData?.value;
                   if (session == null || couple == null) return;
+                  final shareDefault = ref.read(shareCycleByDefaultProvider);
                   await ref.read(cycleRepositoryProvider).startCycle(
                         userId: session.user.id,
                         coupleId: couple.id,
                         startedOn: DateTime.now(),
+                        visibility: shareDefault ? 'shared' : 'private',
                       );
                 },
                 child: const Text('Start period'),
