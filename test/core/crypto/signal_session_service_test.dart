@@ -175,4 +175,119 @@ void main() {
 
     expect(second.single.cipherType, CiphertextMessage.whisperType);
   });
+
+  test('RESTART SURVIVAL: a session rebuilt from the DB still decrypts',
+      () async {
+    final registry = <_Device>[];
+    final alice = await _makeDevice('alice', 1, registry);
+    final bob = await _makeDevice('bob', 1, registry);
+    registry.addAll([alice, bob]);
+
+    final first = await alice.service.encryptFor(
+        recipientUserId: 'bob',
+        plaintext: Uint8List.fromList(utf8.encode('before restart')));
+
+    await bob.service.decryptFrom(
+      senderUserId: 'alice',
+      senderDeviceNum: 1,
+      ciphertext: first.single.ciphertext,
+      cipherType: first.single.cipherType,
+    );
+
+    // Simulate an app restart: brand new service over the SAME db + vault.
+    final revived = SignalSessionService(
+      db: bob.db,
+      vault: bob.vault,
+      bundles: _FakeBundles(registry),
+      selfUserId: 'bob',
+      selfDeviceNum: 1,
+    );
+
+    final second = await alice.service.encryptFor(
+        recipientUserId: 'bob',
+        plaintext: Uint8List.fromList(utf8.encode('after restart')));
+
+    final plain = await revived.decryptFrom(
+      senderUserId: 'alice',
+      senderDeviceNum: 1,
+      ciphertext: second.single.ciphertext,
+      cipherType: second.single.cipherType,
+    );
+    expect(utf8.decode(plain), 'after restart',
+        reason: 'ratchet state must persist across a restart');
+  });
+
+  test('OUT-OF-ORDER: messages delivered 3,1,2 all decrypt', () async {
+    final registry = <_Device>[];
+    final alice = await _makeDevice('alice', 1, registry);
+    final bob = await _makeDevice('bob', 1, registry);
+    registry.addAll([alice, bob]);
+
+    final msgs = <EncryptedCopy>[];
+    for (final t in ['one', 'two', 'three']) {
+      final c = await alice.service.encryptFor(
+          recipientUserId: 'bob',
+          plaintext: Uint8List.fromList(utf8.encode(t)));
+      msgs.add(c.single);
+    }
+
+    final got = <String>[];
+    for (final i in [2, 0, 1]) {
+      final plain = await bob.service.decryptFrom(
+        senderUserId: 'alice',
+        senderDeviceNum: 1,
+        ciphertext: msgs[i].ciphertext,
+        cipherType: msgs[i].cipherType,
+      );
+      got.add(utf8.decode(plain));
+    }
+    expect(got, ['three', 'one', 'two']);
+  });
+
+  test('PREKEY EXHAUSTION: session still establishes from the signed prekey',
+      () async {
+    final registry = <_Device>[];
+    final alice = await _makeDevice('alice', 1, registry);
+    final bob = await _makeDevice('bob', 1, registry);
+    registry.addAll([alice, bob]);
+
+    // Bundle source that has run out of one-time prekeys.
+    final exhausted = _ExhaustedBundles([bob]);
+    final svc = SignalSessionService(
+      db: alice.db,
+      vault: alice.vault,
+      bundles: exhausted,
+      selfUserId: 'alice',
+      selfDeviceNum: 1,
+    );
+
+    final copies = await svc.encryptFor(
+        recipientUserId: 'bob', plaintext: Uint8List.fromList(utf8.encode('hi')));
+
+    expect(copies, hasLength(1));
+    expect(copies.single.cipherType, CiphertextMessage.prekeyType);
+  });
+}
+
+/// Bundle source whose devices have no one-time prekeys left.
+class _ExhaustedBundles implements PreKeyBundleSource {
+  _ExhaustedBundles(this.devices);
+  final List<_Device> devices;
+
+  @override
+  Future<List<DeviceBundle>> bundlesFor(String userId) async {
+    return devices.where((d) => d.userId == userId).map((d) {
+      final p = d.generated.public;
+      return DeviceBundle(
+        deviceNum: d.deviceNum,
+        registrationId: p.registrationId,
+        identityPub: p.identityPub,
+        signedPrekeyId: p.signedPrekeyId,
+        signedPrekeyPub: p.signedPrekeyPub,
+        signedPrekeySig: p.signedPrekeySig,
+        oneTimePrekeyId: null,
+        oneTimePrekeyPub: null,
+      );
+    }).toList();
+  }
 }
