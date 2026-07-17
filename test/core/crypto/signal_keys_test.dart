@@ -29,4 +29,32 @@ void main() {
     final b = generateBundle(deviceId: 'b', oneTimePrekeyCount: 1);
     expect(a.public.identityPub, isNot(equals(b.public.identityPub)));
   });
+
+  test('generateBundle honours explicit starting ids', () {
+    final b = generateBundle(
+      deviceId: 'd',
+      oneTimePrekeyCount: 3,
+      firstPrekeyId: 100,
+      signedPrekeyId: 7,
+    );
+
+    expect(b.public.signedPrekeyId, 7);
+    expect(b.public.oneTimePrekeys.map((p) => p.id).toList(), [100, 101, 102]);
+    expect(b.private.oneTimePrekeysSerialized.keys.toList()..sort(),
+        [100, 101, 102]);
+  });
+
+  test('generateBundle defaults are unchanged (ids start at 1)', () {
+    final b = generateBundle(deviceId: 'd', oneTimePrekeyCount: 2);
+
+    expect(b.public.signedPrekeyId, 1);
+    expect(b.public.oneTimePrekeys.map((p) => p.id).toList(), [1, 2]);
+  });
+
+  test('generatePrekeyBatch numbers from the given first id', () {
+    final batch = generatePrekeyBatch(firstPrekeyId: 50, count: 3);
+
+    expect(batch.publics.map((p) => p.id).toList(), [50, 51, 52]);
+    expect(batch.privateSerialized.keys.toList()..sort(), [50, 51, 52]);
+  });
 }
