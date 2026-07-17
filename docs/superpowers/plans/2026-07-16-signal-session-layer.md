@@ -16,6 +16,7 @@
 - Multi-device **fan-out**: encrypt one copy per recipient device **plus** per the sender's own other devices.
 - Identity trust: **TOFU + accept-on-change**, recording a change event. `isTrustedIdentity` always returns true.
 - Identity keypair + registration id + device number live in the **Keychain** (`KeyVault`); the Drift DB holds session/prekey/identity state only.
+- **`KeyVault` takes a `SecureStore` abstraction** (Task 2). Tests construct a **per-device `InMemorySecureStore`**. **Never use `FlutterSecureStorage.setMockInitialValues` in these tests** — it is a single global map shared by every instance, so simulated devices would clobber each other's identities and the multi-device tests would silently lie.
 - No UI, no `messages` table changes, no media in this plan.
 - Local Supabase is OFF (project runs against Cloud). Migration verification is `supabase db push` + `supabase migration list`; there are **no** DB integration tests. All Dart tests use Drift **in-memory** + a fake bundle source.
 - Follow existing patterns: repositories take a `SupabaseClient`; failures use `core/errors/failures.dart`.
@@ -230,36 +231,40 @@ git commit -m "feat(db): signal device numbers, one-time prekey table, bundle RP
 
 ---
 
-### Task 2: KeyVault persists registration id + device number
+### Task 2: SecureStore abstraction + KeyVault persists registration id / device number
 
 **Files:**
+- Create: `lib/core/crypto/secure_store.dart`
 - Modify: `lib/core/crypto/key_vault.dart`
 - Modify: `lib/core/crypto/signal_keys.dart` (add `registrationId` to `PrivateBundle`)
+- Modify: `lib/features/auth/domain/auth_controller.dart` (`keyVaultProvider` passes the real store)
 - Test: `test/core/crypto/key_vault_test.dart`
 
 **Interfaces:**
 - Consumes: `PrivateBundle` (existing).
-- Produces: `PrivateBundle.registrationId` (int); `KeyVault.readRegistrationId() → Future<int?>`, `KeyVault.saveDeviceNum(int)`, `KeyVault.readDeviceNum() → Future<int?>`.
+- Produces:
+  - `abstract class SecureStore { Future<String?> read(String key); Future<void> write(String key, String value); Future<void> delete(String key); Future<void> deleteAll(); }`
+  - `class FlutterSecureStore implements SecureStore` (wraps `FlutterSecureStorage`)
+  - `class InMemorySecureStore implements SecureStore` (tests; **per-instance** map)
+  - `KeyVault(SecureStore store)`
+  - `PrivateBundle.registrationId` (int); `KeyVault.readRegistrationId() → Future<int?>`, `KeyVault.saveDeviceNum(int)`, `KeyVault.readDeviceNum() → Future<int?>`.
 
-**Why:** `IdentityKeyStore.getLocalRegistrationId()` is required by libsignal, but nothing currently persists the registration id locally. The device number returned by `register_device_bundle` must also survive restarts.
+**Why:** libsignal's `IdentityKeyStore.getLocalRegistrationId()` is required, but nothing currently persists the registration id (`PrivateBundle` doesn't carry it) or the device number.
+
+**Why the abstraction:** later tasks simulate several devices at once. `FlutterSecureStorage`'s test mock is one **global** map shared by all instances, so device B's identity would overwrite device A's and the multi-device tests would pass while testing nonsense. `InMemorySecureStore` gives each simulated device a genuinely isolated vault.
 
 - [ ] **Step 1: Write the failing test**
 
 ```dart
 // test/core/crypto/key_vault_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sakinah/core/crypto/key_vault.dart';
+import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_keys.dart';
 
 void main() {
-  setUp(() {
-    // In-memory backing for flutter_secure_storage in tests.
-    FlutterSecureStorage.setMockInitialValues({});
-  });
-
   test('round-trips registration id and device number', () async {
-    final vault = KeyVault(const FlutterSecureStorage());
+    final vault = KeyVault(InMemorySecureStore());
     final generated = generateBundle(deviceId: 'dev-1', oneTimePrekeyCount: 2);
 
     await vault.savePrivate(generated.private);
@@ -271,8 +276,9 @@ void main() {
   });
 
   test('wipe clears registration id and device number', () async {
-    final vault = KeyVault(const FlutterSecureStorage());
-    await vault.savePrivate(generateBundle(deviceId: 'd', oneTimePrekeyCount: 1).private);
+    final vault = KeyVault(InMemorySecureStore());
+    await vault.savePrivate(
+        generateBundle(deviceId: 'd', oneTimePrekeyCount: 1).private);
     await vault.saveDeviceNum(1);
 
     await vault.wipe();
@@ -280,19 +286,94 @@ void main() {
     expect(await vault.readRegistrationId(), isNull);
     expect(await vault.readDeviceNum(), isNull);
   });
+
+  test('two vaults with separate stores do not share state', () async {
+    final a = KeyVault(InMemorySecureStore());
+    final b = KeyVault(InMemorySecureStore());
+
+    await a.savePrivate(generateBundle(deviceId: 'a', oneTimePrekeyCount: 1).private);
+
+    expect(await a.hasIdentity(), isTrue);
+    expect(await b.hasIdentity(), isFalse,
+        reason: 'each simulated device must have an isolated vault');
+  });
 }
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `flutter test test/core/crypto/key_vault_test.dart`
-Expected: FAIL — `registrationId` / `readRegistrationId` / `saveDeviceNum` undefined.
+Expected: FAIL — `secure_store.dart` not found / `KeyVault(InMemorySecureStore())` type mismatch.
 
-- [ ] **Step 3: Add registrationId to PrivateBundle**
+- [ ] **Step 3: Create the SecureStore abstraction**
+
+```dart
+// lib/core/crypto/secure_store.dart
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+/// Minimal key/value secret storage. Exists so KeyVault can be constructed with
+/// an isolated fake per simulated device in tests — FlutterSecureStorage's mock
+/// is a single global map and would let devices clobber each other.
+abstract class SecureStore {
+  Future<String?> read(String key);
+  Future<void> write(String key, String value);
+  Future<void> delete(String key);
+  Future<void> deleteAll();
+}
+
+class FlutterSecureStore implements SecureStore {
+  const FlutterSecureStore(this._storage);
+
+  final FlutterSecureStorage _storage;
+
+  @override
+  Future<String?> read(String key) => _storage.read(key: key);
+
+  @override
+  Future<void> write(String key, String value) =>
+      _storage.write(key: key, value: value);
+
+  @override
+  Future<void> delete(String key) => _storage.delete(key: key);
+
+  @override
+  Future<void> deleteAll() => _storage.deleteAll();
+}
+
+/// Test double with per-instance state.
+class InMemorySecureStore implements SecureStore {
+  final Map<String, String> _values = {};
+
+  @override
+  Future<String?> read(String key) async => _values[key];
+
+  @override
+  Future<void> write(String key, String value) async => _values[key] = value;
+
+  @override
+  Future<void> delete(String key) async => _values.remove(key);
+
+  @override
+  Future<void> deleteAll() async => _values.clear();
+}
+```
+
+- [ ] **Step 4: Point KeyVault at SecureStore**
+
+In `lib/core/crypto/key_vault.dart`, change the constructor parameter type from `FlutterSecureStorage` to `SecureStore`, and replace every `_storage.read(key: k)` / `_storage.write(key: k, value: v)` / `_storage.delete(key: k)` call with the `SecureStore` equivalents (`_storage.read(k)`, `_storage.write(k, v)`, `_storage.delete(k)`). Keep all existing methods and key names unchanged.
+
+In `lib/features/auth/domain/auth_controller.dart`, update `keyVaultProvider` to wrap the real storage:
+```dart
+final keyVaultProvider = Provider<KeyVault>((ref) {
+  return KeyVault(FlutterSecureStore(ref.read(secureStorageProvider)));
+});
+```
+
+- [ ] **Step 5: Add registrationId to PrivateBundle**
 
 In `lib/core/crypto/signal_keys.dart`, add to `PrivateBundle`: a `final int registrationId;` field, `required this.registrationId` in the const constructor, and pass `registrationId: registrationId` where `generateBundle` builds the `PrivateBundle` (the value is already computed as `registrationId` for the public bundle).
 
-- [ ] **Step 4: Extend KeyVault**
+- [ ] **Step 6: Extend KeyVault with the new fields**
 
 In `lib/core/crypto/key_vault.dart` add key constants and methods alongside the existing ones:
 
@@ -321,16 +402,18 @@ In `savePrivate`, also write the registration id:
 ```
 In `wipe`, also delete `_registrationIdKey` and `_deviceNumKey`.
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 7: Run tests + analyze**
 
 Run: `flutter test test/core/crypto/key_vault_test.dart test/core/crypto/signal_keys_test.dart`
-Expected: PASS.
+Expected: PASS (3 vault tests + existing signal_keys tests).
+Run: `flutter analyze lib/core/crypto lib/features/auth`
+Expected: No issues (confirms `keyVaultProvider` still compiles against the new constructor).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add lib/core/crypto/key_vault.dart lib/core/crypto/signal_keys.dart test/core/crypto/key_vault_test.dart
-git commit -m "feat(crypto): persist registration id + device number in KeyVault"
+git add lib/core/crypto/secure_store.dart lib/core/crypto/key_vault.dart lib/core/crypto/signal_keys.dart lib/features/auth/domain/auth_controller.dart test/core/crypto/key_vault_test.dart
+git commit -m "feat(crypto): SecureStore abstraction + persist registration id/device number"
 ```
 
 ---
@@ -830,10 +913,10 @@ git commit -m "feat(crypto): drift-backed PreKeyStore + SignedPreKeyStore"
 
 ```dart
 // test/core/crypto/stores/drift_identity_store_test.dart
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:sakinah/core/crypto/key_vault.dart';
+import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_keys.dart';
 import 'package:sakinah/core/crypto/stores/drift_identity_store.dart';
 import 'package:sakinah/core/storage/signal_db.dart';
@@ -844,9 +927,8 @@ void main() {
   late DriftIdentityStore store;
 
   setUp(() async {
-    FlutterSecureStorage.setMockInitialValues({});
     db = SignalDb.memory();
-    vault = KeyVault(const FlutterSecureStorage());
+    vault = KeyVault(InMemorySecureStore());
     await vault.savePrivate(
         generateBundle(deviceId: 'd', oneTimePrekeyCount: 1).private);
     store = DriftIdentityStore(db, vault);
@@ -1028,20 +1110,19 @@ git commit -m "feat(crypto): drift-backed IdentityKeyStore with TOFU + change ev
 
 ```dart
 // test/core/crypto/stores/drift_signal_store_test.dart
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:sakinah/core/crypto/key_vault.dart';
+import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_keys.dart';
 import 'package:sakinah/core/crypto/stores/drift_signal_store.dart';
 import 'package:sakinah/core/storage/signal_db.dart';
 
 void main() {
   test('satisfies SignalProtocolStore across all four interfaces', () async {
-    FlutterSecureStorage.setMockInitialValues({});
     final db = SignalDb.memory();
     addTearDown(db.close);
-    final vault = KeyVault(const FlutterSecureStorage());
+    final vault = KeyVault(InMemorySecureStore());
     final generated = generateBundle(deviceId: 'd', oneTimePrekeyCount: 1);
     await vault.savePrivate(generated.private);
 
@@ -1392,11 +1473,11 @@ git commit -m "feat(crypto): injectable prekey bundle source"
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:sakinah/core/crypto/key_vault.dart';
 import 'package:sakinah/core/crypto/prekey_bundle_source.dart';
+import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_keys.dart';
 import 'package:sakinah/core/crypto/signal_session_service.dart';
 import 'package:sakinah/core/storage/signal_db.dart';
@@ -1435,12 +1516,17 @@ class _FakeBundles implements PreKeyBundleSource {
   }
 }
 
+/// Builds a fully independent device: its own in-memory DB and its own isolated
+/// vault, with its identity and prekeys already loaded. Devices never share
+/// state, so any number can be active at once.
 Future<_Device> _makeDevice(String userId, int deviceNum,
     List<_Device> registry) async {
   final d = _Device(userId, deviceNum);
   d.db = SignalDb.memory();
-  d.vault = KeyVault(const FlutterSecureStorage());
+  d.vault = KeyVault(InMemorySecureStore());
   d.generated = generateBundle(deviceId: '$userId-$deviceNum');
+  await d.vault.savePrivate(d.generated.private);
+  await d.vault.saveDeviceNum(deviceNum);
   d.service = SignalSessionService(
     db: d.db,
     vault: d.vault,
@@ -1448,24 +1534,16 @@ Future<_Device> _makeDevice(String userId, int deviceNum,
     selfUserId: userId,
     selfDeviceNum: deviceNum,
   );
-  return d;
-}
-
-/// Each device needs its own Keychain namespace; the mock store is global, so
-/// load this device's identity into the vault before using its service.
-Future<void> _activate(_Device d) async {
-  FlutterSecureStorage.setMockInitialValues({});
-  await d.vault.savePrivate(d.generated.private);
-  await d.vault.saveDeviceNum(d.deviceNum);
   // Its own prekeys must be in its store so incoming prekey messages resolve.
-  final store = d.service.store;
   for (final entry in d.generated.private.oneTimePrekeysSerialized.entries) {
-    await store.storePreKey(entry.key, PreKeyRecord.fromBuffer(entry.value));
+    await d.service.store
+        .storePreKey(entry.key, PreKeyRecord.fromBuffer(entry.value));
   }
-  await store.storeSignedPreKey(
+  await d.service.store.storeSignedPreKey(
     d.generated.public.signedPrekeyId,
     SignedPreKeyRecord.fromSerialized(d.generated.private.signedPrekeySerialized),
   );
+  return d;
 }
 
 void main() {
@@ -1475,7 +1553,6 @@ void main() {
     final bob = await _makeDevice('bob', 1, registry);
     registry.addAll([alice, bob]);
 
-    await _activate(alice);
     final copies = await alice.service.encryptFor(
       recipientUserId: 'bob',
       plaintext: Uint8List.fromList(utf8.encode('as-salamu alaykum')),
@@ -1484,7 +1561,6 @@ void main() {
     expect(copies.single.cipherType, CiphertextMessage.prekeyType,
         reason: 'first message to a device must be a prekey message (3)');
 
-    await _activate(bob);
     final plain = await bob.service.decryptFrom(
       senderUserId: 'alice',
       senderDeviceNum: 1,
@@ -1502,7 +1578,6 @@ void main() {
     final bob2 = await _makeDevice('bob', 2, registry);
     registry.addAll([alice1, alice2, bob1, bob2]);
 
-    await _activate(alice1);
     final copies = await alice1.service.encryptFor(
       recipientUserId: 'bob',
       plaintext: Uint8List.fromList(utf8.encode('hi')),
@@ -1522,7 +1597,6 @@ void main() {
     final bob = await _makeDevice('bob', 1, registry);
     registry.addAll([alice, bob]);
 
-    await _activate(alice);
     await alice.service.encryptFor(
         recipientUserId: 'bob', plaintext: Uint8List.fromList([1]));
     final second = await alice.service.encryptFor(
@@ -1693,12 +1767,10 @@ Append to `test/core/crypto/signal_session_service_test.dart`:
     final bob = await _makeDevice('bob', 1, registry);
     registry.addAll([alice, bob]);
 
-    await _activate(alice);
     final first = await alice.service.encryptFor(
         recipientUserId: 'bob',
         plaintext: Uint8List.fromList(utf8.encode('before restart')));
 
-    await _activate(bob);
     await bob.service.decryptFrom(
       senderUserId: 'alice',
       senderDeviceNum: 1,
@@ -1715,12 +1787,10 @@ Append to `test/core/crypto/signal_session_service_test.dart`:
       selfDeviceNum: 1,
     );
 
-    await _activate(alice);
     final second = await alice.service.encryptFor(
         recipientUserId: 'bob',
         plaintext: Uint8List.fromList(utf8.encode('after restart')));
 
-    await _activate(bob);
     final plain = await revived.decryptFrom(
       senderUserId: 'alice',
       senderDeviceNum: 1,
@@ -1737,7 +1807,6 @@ Append to `test/core/crypto/signal_session_service_test.dart`:
     final bob = await _makeDevice('bob', 1, registry);
     registry.addAll([alice, bob]);
 
-    await _activate(alice);
     final msgs = <EncryptedCopy>[];
     for (final t in ['one', 'two', 'three']) {
       final c = await alice.service.encryptFor(
@@ -1746,7 +1815,6 @@ Append to `test/core/crypto/signal_session_service_test.dart`:
       msgs.add(c.single);
     }
 
-    await _activate(bob);
     final got = <String>[];
     for (final i in [2, 0, 1]) {
       final plain = await bob.service.decryptFrom(
@@ -1769,7 +1837,6 @@ Append to `test/core/crypto/signal_session_service_test.dart`:
 
     // Bundle source that has run out of one-time prekeys.
     final exhausted = _ExhaustedBundles([bob]);
-    await _activate(alice);
     final svc = SignalSessionService(
       db: alice.db,
       vault: alice.vault,
@@ -1851,9 +1918,9 @@ git commit -m "test(crypto): restart survival, out-of-order, prekey exhaustion"
 // test/core/crypto/signal_registration_test.dart
 import 'dart:typed_data';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakinah/core/crypto/key_vault.dart';
+import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_registration.dart';
 
 class _FakeRegistrar implements DeviceRegistrar {
@@ -1886,11 +1953,9 @@ class _FakeRegistrar implements DeviceRegistrar {
 }
 
 void main() {
-  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
-
   test('ensureRegistered generates, registers and persists the device number',
       () async {
-    final vault = KeyVault(const FlutterSecureStorage());
+    final vault = KeyVault(InMemorySecureStore());
     final registrar = _FakeRegistrar();
 
     final deviceNum = await ensureRegistered(vault: vault, registrar: registrar);
@@ -1904,7 +1969,7 @@ void main() {
 
   test('ensureRegistered is idempotent — a second call keeps the identity',
       () async {
-    final vault = KeyVault(const FlutterSecureStorage());
+    final vault = KeyVault(InMemorySecureStore());
     final registrar = _FakeRegistrar();
 
     await ensureRegistered(vault: vault, registrar: registrar);
