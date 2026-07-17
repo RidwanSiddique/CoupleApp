@@ -21,6 +21,7 @@ class _Device {
   late KeyVault vault;
   late _Registered generated;
   late SignalSessionService service;
+  late _FakeBundles source;
 }
 
 /// Minimal wrapper preserving the `d.generated.public` shape callers use.
@@ -93,22 +94,35 @@ class _FakeBundles implements PreKeyBundleSource {
   _FakeBundles(this.devices);
   final List<_Device> devices;
 
+  int deviceNumsForCalls = 0;
+  int bundleForCalls = 0;
+
   @override
-  Future<List<DeviceBundle>> bundlesFor(String userId) async {
-    return devices.where((d) => d.userId == userId).map((d) {
-      final p = d.generated.public;
-      final otp = p.oneTimePrekeys.first;
-      return DeviceBundle(
-        deviceNum: d.deviceNum,
-        registrationId: p.registrationId,
-        identityPub: p.identityPub,
-        signedPrekeyId: p.signedPrekeyId,
-        signedPrekeyPub: p.signedPrekeyPub,
-        signedPrekeySig: p.signedPrekeySig,
-        oneTimePrekeyId: otp.id,
-        oneTimePrekeyPub: otp.pub,
-      );
-    }).toList();
+  Future<List<int>> deviceNumsFor(String userId) async {
+    deviceNumsForCalls++;
+    return devices.where((d) => d.userId == userId).map((d) => d.deviceNum).toList();
+  }
+
+  @override
+  Future<DeviceBundle?> bundleFor(String userId, int deviceNum) async {
+    bundleForCalls++;
+    final matches = devices
+        .where((d) => d.userId == userId && d.deviceNum == deviceNum)
+        .toList();
+    if (matches.isEmpty) return null;
+    final d = matches.first;
+    final p = d.generated.public;
+    final otp = p.oneTimePrekeys.first;
+    return DeviceBundle(
+      deviceNum: d.deviceNum,
+      registrationId: p.registrationId,
+      identityPub: p.identityPub,
+      signedPrekeyId: p.signedPrekeyId,
+      signedPrekeyPub: p.signedPrekeyPub,
+      signedPrekeySig: p.signedPrekeySig,
+      oneTimePrekeyId: otp.id,
+      oneTimePrekeyPub: otp.pub,
+    );
   }
 }
 
@@ -133,10 +147,11 @@ Future<_Device> _makeDevice(String userId, int deviceNum,
       reason: 'test setup assumes the fake registrar\'s device_num is used');
   d.generated = _Registered(registrar.published!);
 
+  d.source = _FakeBundles(registry);
   d.service = SignalSessionService(
     db: d.db,
     vault: d.vault,
-    bundles: _FakeBundles(registry),
+    bundles: d.source,
     selfUserId: userId,
     selfDeviceNum: deviceNum,
   );
@@ -382,6 +397,28 @@ void main() {
             'still round-trip real plaintext, not just produce the right '
             'wire type');
   });
+
+  test('an established session consumes NO prekey bundles on later sends', () async {
+    final registry = <_Device>[];
+    final alice = await _makeDevice('alice', 1, registry);
+    final bob = await _makeDevice('bob', 1, registry);
+    registry.addAll([alice, bob]);
+
+    final source = alice.source; // the _FakeBundles instance alice uses
+
+    await alice.service.encryptFor(
+        recipientUserId: 'bob', plaintext: Uint8List.fromList([1]));
+    final afterFirst = source.bundleForCalls;
+    expect(afterFirst, 1, reason: 'exactly one handshake for bob:1');
+
+    await alice.service.encryptFor(
+        recipientUserId: 'bob', plaintext: Uint8List.fromList([2]));
+
+    expect(source.bundleForCalls, afterFirst,
+        reason: 'second send must NOT fetch (and consume) another bundle');
+    expect(source.deviceNumsForCalls, greaterThan(0),
+        reason: 'roster lookup is used instead');
+  });
 }
 
 /// Bundle source whose devices have no one-time prekeys left.
@@ -390,19 +427,27 @@ class _ExhaustedBundles implements PreKeyBundleSource {
   final List<_Device> devices;
 
   @override
-  Future<List<DeviceBundle>> bundlesFor(String userId) async {
-    return devices.where((d) => d.userId == userId).map((d) {
-      final p = d.generated.public;
-      return DeviceBundle(
-        deviceNum: d.deviceNum,
-        registrationId: p.registrationId,
-        identityPub: p.identityPub,
-        signedPrekeyId: p.signedPrekeyId,
-        signedPrekeyPub: p.signedPrekeyPub,
-        signedPrekeySig: p.signedPrekeySig,
-        oneTimePrekeyId: null,
-        oneTimePrekeyPub: null,
-      );
-    }).toList();
+  Future<List<int>> deviceNumsFor(String userId) async {
+    return devices.where((d) => d.userId == userId).map((d) => d.deviceNum).toList();
+  }
+
+  @override
+  Future<DeviceBundle?> bundleFor(String userId, int deviceNum) async {
+    final matches = devices
+        .where((d) => d.userId == userId && d.deviceNum == deviceNum)
+        .toList();
+    if (matches.isEmpty) return null;
+    final d = matches.first;
+    final p = d.generated.public;
+    return DeviceBundle(
+      deviceNum: d.deviceNum,
+      registrationId: p.registrationId,
+      identityPub: p.identityPub,
+      signedPrekeyId: p.signedPrekeyId,
+      signedPrekeyPub: p.signedPrekeyPub,
+      signedPrekeySig: p.signedPrekeySig,
+      oneTimePrekeyId: null,
+      oneTimePrekeyPub: null,
+    );
   }
 }

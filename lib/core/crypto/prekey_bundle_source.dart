@@ -67,9 +67,13 @@ class DeviceBundle {
 }
 
 abstract class PreKeyBundleSource {
-  /// Every registered device of [userId] (self or spouse). Consumes one
-  /// one-time prekey per device server-side.
-  Future<List<DeviceBundle>> bundlesFor(String userId);
+  /// The target's device numbers. Consumes NOTHING — this is called on every
+  /// send to build the fan-out roster.
+  Future<List<int>> deviceNumsFor(String userId);
+
+  /// One device's bundle, consuming one one-time prekey server-side. Call this
+  /// ONLY when establishing a session. Null when the device has no bundle.
+  Future<DeviceBundle?> bundleFor(String userId, int deviceNum);
 }
 
 class SupabasePreKeyBundleSource implements PreKeyBundleSource {
@@ -78,14 +82,24 @@ class SupabasePreKeyBundleSource implements PreKeyBundleSource {
   final SupabaseClient _client;
 
   @override
-  Future<List<DeviceBundle>> bundlesFor(String userId) async {
+  Future<List<int>> deviceNumsFor(String userId) async {
     final rows = await _client.rpc(
-      'fetch_prekey_bundles',
+      'list_devices',
       params: {'p_target_user': userId},
     );
     if (rows is! List) return const [];
     return rows
-        .map((r) => DeviceBundle.fromRow(Map<String, dynamic>.from(r as Map)))
+        .map((r) => (Map<String, dynamic>.from(r as Map))['device_num'] as int)
         .toList();
+  }
+
+  @override
+  Future<DeviceBundle?> bundleFor(String userId, int deviceNum) async {
+    final rows = await _client.rpc(
+      'fetch_prekey_bundle',
+      params: {'p_target_user': userId, 'p_device_num': deviceNum},
+    );
+    if (rows is! List || rows.isEmpty) return null;
+    return DeviceBundle.fromRow(Map<String, dynamic>.from(rows.first as Map));
   }
 }

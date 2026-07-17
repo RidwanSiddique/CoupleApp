@@ -50,14 +50,15 @@ class SignalSessionService {
   }) async {
     final targets = <({String userId, int deviceNum})>[];
 
+    // Roster lookups consume nothing; only a real handshake consumes a prekey.
     if (recipientUserId != _selfUserId) {
-      for (final b in await _bundles.bundlesFor(recipientUserId)) {
-        targets.add((userId: recipientUserId, deviceNum: b.deviceNum));
+      for (final n in await _bundles.deviceNumsFor(recipientUserId)) {
+        targets.add((userId: recipientUserId, deviceNum: n));
       }
     }
-    for (final b in await _bundles.bundlesFor(_selfUserId)) {
-      if (b.deviceNum == _selfDeviceNum) continue;
-      targets.add((userId: _selfUserId, deviceNum: b.deviceNum));
+    for (final n in await _bundles.deviceNumsFor(_selfUserId)) {
+      if (n == _selfDeviceNum) continue;
+      targets.add((userId: _selfUserId, deviceNum: n));
     }
 
     final copies = <EncryptedCopy>[];
@@ -92,19 +93,19 @@ class SignalSessionService {
     return cipher.decryptFromSignal(SignalMessage.fromSerialized(ciphertext));
   }
 
-  /// X3DH only when we have no session for this address yet.
+  /// X3DH only when we have no session for this address yet. This is the ONLY
+  /// place allowed to fetch a bundle, because fetching consumes a one-time
+  /// prekey server-side.
   Future<void> _ensureSession(SignalProtocolAddress address) async {
     if (await _store.containsSession(address)) return;
 
-    final bundles = await _bundles.bundlesFor(address.getName());
-    final match = bundles
-        .where((b) => b.deviceNum == address.getDeviceId())
-        .toList();
-    if (match.isEmpty) {
+    final bundle =
+        await _bundles.bundleFor(address.getName(), address.getDeviceId());
+    if (bundle == null) {
       throw StateError(
           'No published bundle for ${address.getName()}:${address.getDeviceId()}');
     }
     final builder = SessionBuilder.fromSignalStore(_store, address);
-    await builder.processPreKeyBundle(match.first.toPreKeyBundle());
+    await builder.processPreKeyBundle(bundle.toPreKeyBundle());
   }
 }

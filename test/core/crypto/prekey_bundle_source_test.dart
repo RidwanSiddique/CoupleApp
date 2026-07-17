@@ -136,4 +136,18 @@ void main() {
     expect(b.signedPrekeyId, 777);
     expect(b.oneTimePrekeyId, 888);
   });
+
+  test('PreKeyBundleSource exposes a non-consuming roster and a single-device fetch', () {
+    // Compile-time contract check: a fake must satisfy exactly these members.
+    final fake = _FakeSource();
+    expect(fake, isA<PreKeyBundleSource>());
+  });
+}
+
+class _FakeSource implements PreKeyBundleSource {
+  @override
+  Future<List<int>> deviceNumsFor(String userId) async => [1, 2];
+
+  @override
+  Future<DeviceBundle?> bundleFor(String userId, int deviceNum) async => null;
 }
