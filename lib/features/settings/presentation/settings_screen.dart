@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/domain/auth_controller.dart';
 import '../../cycle/domain/cycle_providers.dart';
+import '../../home/domain/home_providers.dart';
 import '../domain/settings_providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -10,12 +11,42 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isWife = ref.watch(isWifeProvider);
+    // Derive from the profile rather than also watching isWifeProvider:
+    // watching an async provider and a sync provider derived from it in the
+    // same build re-enters and throws "setState during build".
+    final profile = ref.watch(ownProfileProvider).asData?.value;
+    final isWife = profile?.gender == 'female';
+    final madhhab = profile?.madhhab ?? 'shafi';
     final shareDefault = ref.watch(shareCycleByDefaultProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(children: [
+        const _SectionHeader('Profile'),
+        ListTile(
+          title: const Text('Madhhab'),
+          subtitle: const Text('Changes when Asr begins.'),
+          trailing: DropdownButton<String>(
+            value: madhhab,
+            onChanged: profile == null
+                ? null
+                : (v) async {
+                    if (v == null || v == madhhab) return;
+                    final session = ref.read(authSessionProvider).asData?.value;
+                    if (session == null) return;
+                    await ref.read(profileRepositoryProvider).updateMadhhab(
+                          userId: session.user.id,
+                          madhhab: v,
+                        );
+                    // Recompute prayer times (and the cycle max-duration hint).
+                    ref.invalidate(ownProfileProvider);
+                  },
+            items: const [
+              DropdownMenuItem(value: 'shafi', child: Text('Shāfiʿī / other')),
+              DropdownMenuItem(value: 'hanafi', child: Text('Ḥanafī')),
+            ],
+          ),
+        ),
         const _SectionHeader('Privacy & Sharing'),
         if (isWife)
           SwitchListTile(

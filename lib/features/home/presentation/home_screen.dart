@@ -7,7 +7,6 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/theme/typography.dart';
 import '../../../core/time/prayer_engine.dart';
 import '../../../core/widgets/widgets.dart';
-import '../../auth/domain/auth_controller.dart';
 import '../../daily/presentation/question_card.dart';
 import '../../daily/presentation/verse_card.dart';
 import '../../duas/presentation/dua_card.dart';
@@ -81,26 +80,6 @@ class HomeScreen extends ConsumerWidget {
                         icon: const Icon(Icons.settings_outlined),
                         tooltip: 'Settings',
                         onPressed: () => context.go('/home/settings'),
-                      ),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_horiz),
-                        onSelected: (v) {
-                          if (v == 'logout') {
-                            ref.read(authRepositoryProvider).signOut();
-                          }
-                        },
-                        itemBuilder: (_) => [
-                          const PopupMenuItem<String>(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout_outlined, size: 18),
-                                SizedBox(width: SakSpace.sm),
-                                Text('Sign out'),
-                              ],
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
