@@ -53,12 +53,24 @@ class SignalIdentityChanges extends Table {
   DateTimeColumn get changedAt => dateTime().withDefault(currentDateAndTime)();
 }
 
+/// Small key/value store for device-local counters (monotonic key ids).
+/// Lives in the DB rather than the Keychain: it is state, not a secret, and it
+/// shares a lifecycle with the prekeys it numbers.
+class SignalMeta extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
 @DriftDatabase(tables: [
   SignalSessions,
   SignalPrekeys,
   SignalSignedPrekeys,
   SignalIdentities,
   SignalIdentityChanges,
+  SignalMeta,
 ])
 class SignalDb extends _$SignalDb {
   SignalDb() : super(driftDatabase(name: 'sakinah_signal'));
@@ -67,5 +79,13 @@ class SignalDb extends _$SignalDb {
   SignalDb.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) await m.createTable(signalMeta);
+        },
+      );
 }
