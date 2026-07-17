@@ -53,6 +53,7 @@ class PrivateBundle {
     required this.identitySerialized,
     required this.signedPrekeySerialized,
     required this.oneTimePrekeysSerialized,
+    required this.registrationId,
   });
 
   /// [sig.IdentityKeyPair.serialize] output — identity keypair.
@@ -63,6 +64,9 @@ class PrivateBundle {
 
   /// Map of prekey id → [sig.PreKeyRecord.serialize] output.
   final Map<int, Uint8List> oneTimePrekeysSerialized;
+
+  /// Registration ID from libsignal, persisted for IdentityKeyStore.getLocalRegistrationId().
+  final int registrationId;
 }
 
 class GeneratedKeyBundle {
@@ -110,6 +114,7 @@ GeneratedKeyBundle generateBundle({
       identitySerialized: identity.serialize(),
       signedPrekeySerialized: signedPrekey.serialize(),
       oneTimePrekeysSerialized: privateOtps,
+      registrationId: registrationId,
     ),
   );
 }

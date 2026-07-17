@@ -5,12 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/crypto/key_vault.dart';
+import '../../../core/crypto/secure_store.dart';
 import '../../../core/crypto/signal_keys.dart';
 import '../../../shared/providers/supabase_provider.dart';
 import '../data/auth_repository.dart';
 
 final keyVaultProvider = Provider<KeyVault>((ref) {
-  return KeyVault(ref.read(secureStorageProvider));
+  return KeyVault(FlutterSecureStore(ref.read(secureStorageProvider)));
 });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
