@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sakinah/core/crypto/key_vault.dart';
 import 'package:sakinah/core/crypto/secure_store.dart';
+import 'package:sakinah/core/crypto/signal_keys.dart';
 import 'package:sakinah/core/crypto/signal_registration.dart';
 
 class _FakeRegistrar implements DeviceRegistrar {
@@ -61,5 +62,33 @@ void main() {
 
     expect(await vault.readIdentity(), firstIdentity,
         reason: 'regenerating the identity would break every session');
+  });
+
+  test(
+      'resumes without regenerating the identity when device_num was never persisted',
+      () async {
+    final vault = KeyVault(InMemorySecureStore());
+
+    // Seed the exact partial state: savePrivate + saveDeviceId succeeded
+    // (as ensureRegistered does before the network round-trip), but
+    // saveDeviceNum never ran — simulating the app dying or the network
+    // dropping between the two.
+    final seed = generateBundle(deviceId: 'd');
+    await vault.savePrivate(seed.private);
+    await vault.saveDeviceId('d');
+
+    final before = await vault.readIdentity();
+    final registrationIdBefore = await vault.readRegistrationId();
+    expect(await vault.readDeviceNum(), isNull);
+
+    final deviceNum =
+        await ensureRegistered(vault: vault, registrar: _FakeRegistrar());
+
+    expect(await vault.readIdentity(), before,
+        reason:
+            'resuming a partial registration must preserve the existing identity');
+    expect(await vault.readRegistrationId(), registrationIdBefore);
+    expect(await vault.readDeviceNum(), deviceNum);
+    expect(await vault.readDeviceNum(), isNotNull);
   });
 }

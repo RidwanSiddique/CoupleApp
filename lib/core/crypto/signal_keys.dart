@@ -79,12 +79,25 @@ class GeneratedKeyBundle {
 ///
 /// [deviceId] uniquely identifies this device for the user (e.g. install UUID).
 /// [oneTimePrekeyCount] is how many one-time prekeys to generate up front.
+///
+/// [existingIdentity] and [existingRegistrationId] let a caller RESUME a
+/// partially-completed registration (identity persisted locally, but the
+/// server round-trip that returns device_num never finished) without
+/// regenerating the identity keypair. Regenerating an identity here would
+/// silently break every established session and every spouse's TOFU-pinned
+/// identity, even though the server-side upsert would make registration
+/// look successful. The signed prekey and one-time prekeys are always
+/// freshly generated — rotating those is normal, safe protocol behaviour.
+/// When both are omitted, behaviour is identical to a brand-new device.
 GeneratedKeyBundle generateBundle({
   required String deviceId,
   int oneTimePrekeyCount = 20,
+  sig.IdentityKeyPair? existingIdentity,
+  int? existingRegistrationId,
 }) {
-  final identity = sig.generateIdentityKeyPair();
-  final registrationId = sig.generateRegistrationId(false);
+  final identity = existingIdentity ?? sig.generateIdentityKeyPair();
+  final registrationId =
+      existingRegistrationId ?? sig.generateRegistrationId(false);
   const signedPrekeyId = 1;
   final signedPrekey = sig.generateSignedPreKey(identity, signedPrekeyId);
   final oneTimePrekeys = sig.generatePreKeys(1, oneTimePrekeyCount);

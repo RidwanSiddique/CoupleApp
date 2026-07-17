@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart' as sig;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -81,20 +82,47 @@ class SupabaseDeviceRegistrar implements DeviceRegistrar {
 
 /// Generate + publish this device's identity once. Idempotent: an existing
 /// identity is never regenerated, because that would break every session.
+///
+/// There are three possible states on entry:
+///  1. Identity + device_num both present → already fully registered;
+///     short-circuit and return the stored device_num.
+///  2. No identity at all → first-ever registration; generate everything.
+///  3. Identity present but device_num absent → a PARTIAL prior attempt:
+///     [savePrivate] succeeded but the app died or the network dropped
+///     before [saveDeviceNum] ran (there is a network round-trip via
+///     [DeviceRegistrar.register] between the two). This is a RESUME, not
+///     a fresh registration: the stored identity keypair and registration
+///     id must be reused as-is (sessions and TOFU pins bind to them), while
+///     the signed prekey and one-time prekeys are regenerated fresh, which
+///     is normal and safe.
 Future<int> ensureRegistered({
   required KeyVault vault,
   required DeviceRegistrar registrar,
   int oneTimePrekeyCount = 20,
 }) async {
   final existingNum = await vault.readDeviceNum();
-  if (await vault.hasIdentity() && existingNum != null) return existingNum;
+  final hasIdentity = await vault.hasIdentity();
+  if (hasIdentity && existingNum != null) return existingNum;
 
   var deviceId = await vault.deviceId();
   deviceId ??= const Uuid().v4();
   await vault.saveDeviceId(deviceId);
 
-  final generated =
-      generateBundle(deviceId: deviceId, oneTimePrekeyCount: oneTimePrekeyCount);
+  sig.IdentityKeyPair? existingIdentity;
+  int? existingRegistrationId;
+  if (hasIdentity) {
+    // State 3: resume — reuse the identity, do not regenerate it.
+    final identityBytes = await vault.readIdentity();
+    existingIdentity = sig.IdentityKeyPair.fromSerialized(identityBytes!);
+    existingRegistrationId = await vault.readRegistrationId();
+  }
+
+  final generated = generateBundle(
+    deviceId: deviceId,
+    oneTimePrekeyCount: oneTimePrekeyCount,
+    existingIdentity: existingIdentity,
+    existingRegistrationId: existingRegistrationId,
+  );
   await vault.savePrivate(generated.private);
 
   final pub = generated.public;
