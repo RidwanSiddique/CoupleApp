@@ -48,6 +48,7 @@ void main() {
     final changes = await db.select(db.signalIdentityChanges).get();
     expect(changes, hasLength(1));
     expect(changes.single.name, 'bob');
+    expect(changes.single.deviceNum, 1);
   });
 
   test('isTrustedIdentity accepts a changed key (accept-but-warn policy)',
@@ -59,5 +60,34 @@ void main() {
         addr, generateIdentityKeyPair().getPublicKey(), Direction.sending);
 
     expect(trusted, isTrue);
+  });
+
+  test('re-saving the same key returns false and does not create change rows',
+      () async {
+    final addr = SignalProtocolAddress('bob', 1);
+    final key = generateIdentityKeyPair().getPublicKey();
+
+    // First save
+    await store.saveIdentity(addr, key);
+
+    // Save the identical key again
+    final replaced = await store.saveIdentity(addr, key);
+
+    expect(replaced, isFalse,
+        reason:
+            'saving an identical key should not replace (regression guard)');
+    final changes = await db.select(db.signalIdentityChanges).get();
+    expect(changes, isEmpty,
+        reason: 're-saving the same key must not spam change rows');
+  });
+
+  test('vault empty: getIdentityKeyPair and getLocalRegistrationId throw',
+      () async {
+    // Create a new store with an empty vault
+    final emptyVault = KeyVault(InMemorySecureStore());
+    final emptyStore = DriftIdentityStore(db, emptyVault);
+
+    expect(() => emptyStore.getIdentityKeyPair(), throwsStateError);
+    expect(() => emptyStore.getLocalRegistrationId(), throwsStateError);
   });
 }
