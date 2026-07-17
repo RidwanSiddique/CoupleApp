@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../storage/signal_db.dart';
+import 'key_counters.dart';
 import 'key_vault.dart';
 import 'signal_keys.dart';
 import 'stores/drift_signal_store.dart';
@@ -139,11 +140,20 @@ Future<int> ensureRegistered({
     existingRegistrationId = await vault.readRegistrationId();
   }
 
+  // Allocate ids from the persisted counters rather than hardcoding them.
+  // A re-registration (the resume path above) must never reissue an id that
+  // a spouse's device may already hold key material for — see KeyCounters.
+  final counters = KeyCounters(db);
+  final firstPrekeyId = await counters.nextPrekeyId(oneTimePrekeyCount);
+  final signedPrekeyId = await counters.nextSignedPrekeyId();
+
   final generated = generateBundle(
     deviceId: deviceId,
     oneTimePrekeyCount: oneTimePrekeyCount,
     existingIdentity: existingIdentity,
     existingRegistrationId: existingRegistrationId,
+    firstPrekeyId: firstPrekeyId,
+    signedPrekeyId: signedPrekeyId,
   );
   await vault.savePrivate(generated.private);
 
@@ -155,6 +165,14 @@ Future<int> ensureRegistered({
   // published to Supabase. Seeding first also means a network failure below
   // still leaves a locally-consistent device (its own store already has the
   // prekeys it just generated).
+  //
+  // storeSignedPreKey upserts by id, and because signedPrekeyId now advances
+  // via KeyCounters instead of being hardcoded, a rotation on resume writes a
+  // NEW row rather than clobbering the previous one. Retaining old signed
+  // prekeys is deliberate, not an oversight: an in-flight PreKeySignalMessage
+  // names the spk id it was built against, and libsignal resolves it by that
+  // id, so deleting the old row would make such a message permanently
+  // undecryptable.
   final store = DriftSignalStore(db, vault);
   final private = generated.private;
   for (final entry in private.oneTimePrekeysSerialized.entries) {

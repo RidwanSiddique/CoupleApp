@@ -159,4 +159,36 @@ void main() {
     expect(await vault.readDeviceNum(), 1);
     expect(healthy.uploaded, isNotEmpty);
   });
+
+  test('re-registration rotates ids forward and RETAINS the old signed prekey',
+      () async {
+    final db = SignalDb.memory();
+    addTearDown(db.close);
+    final vault = KeyVault(InMemorySecureStore());
+    final registrar = _FakeRegistrar();
+
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
+    final firstSpkIds = await _signedPrekeyIds(db);
+    final firstPrekeyIds = registrar.uploaded.keys.toList()..sort();
+
+    // Force the resume path: identity kept, device number cleared.
+    await vault.clearDeviceNum();
+    registrar.uploaded.clear();
+
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
+
+    final secondSpkIds = await _signedPrekeyIds(db);
+    final secondPrekeyIds = registrar.uploaded.keys.toList()..sort();
+
+    expect(secondSpkIds.length, greaterThan(firstSpkIds.length),
+        reason: 'the previous signed prekey must be RETAINED, not overwritten '
+            '- an in-flight message naming the old id must still decrypt');
+    expect(secondPrekeyIds.first, greaterThan(firstPrekeyIds.last),
+        reason: 'prekey ids must never be reissued with different key material');
+  });
+}
+
+Future<List<int>> _signedPrekeyIds(SignalDb db) async {
+  final rows = await db.select(db.signalSignedPrekeys).get();
+  return rows.map((r) => r.signedPrekeyId).toList()..sort();
 }

@@ -67,6 +67,8 @@ class KeyVault {
     return v == null ? null : int.tryParse(v);
   }
 
+  Future<void> clearDeviceNum() => _storage.delete(_deviceNumKey);
+
   Future<void> wipe() async {
     await _storage.deleteAll();
   }
