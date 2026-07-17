@@ -194,7 +194,32 @@ void main() {
       cipherType: first.single.cipherType,
     );
 
+    // Bob replies and alice decrypts it. This acknowledges alice's pending
+    // prekey (see the "once acknowledged" test above for why that flag
+    // exists), which is essential to this test's integrity: without it,
+    // alice's post-restart message below would still legitimately be a
+    // PreKeySignalMessage, and a PreKeySignalMessage can establish a BRAND
+    // NEW session via processPreKeyBundle-style logic if bob's ratchet state
+    // failed to persist — so the test would still pass even with broken
+    // persistence, proving nothing. Forcing the exchange onto the whisper
+    // path below is what makes the assertion below undeniable: a whisper
+    // message has no session-establishment fallback. bob's decryptFrom must
+    // find a REAL, PERSISTED session or it throws NoSessionException.
+    final bobReply = await bob.service.encryptFor(
+        recipientUserId: 'alice',
+        plaintext: Uint8List.fromList(utf8.encode('got it')));
+    await alice.service.decryptFrom(
+      senderUserId: 'bob',
+      senderDeviceNum: 1,
+      ciphertext: bobReply.single.ciphertext,
+      cipherType: bobReply.single.cipherType,
+    );
+
     // Simulate an app restart: brand new service over the SAME db + vault.
+    // Reusing bob.db and bob.vault (not fresh instances) is the crux of this
+    // test: it proves the ratchet state was actually written to and read
+    // back from durable storage, not merely held in the old service's
+    // in-memory session cache.
     final revived = SignalSessionService(
       db: bob.db,
       vault: bob.vault,
@@ -206,6 +231,15 @@ void main() {
     final second = await alice.service.encryptFor(
         recipientUserId: 'bob',
         plaintext: Uint8List.fromList(utf8.encode('after restart')));
+
+    // The key assertion: because bob's reply was decrypted above, alice's
+    // prekey is acknowledged and this message MUST be a whisper message, not
+    // a prekey message. A whisper message cannot silently fall back to
+    // establishing a fresh X3DH session, so the decrypt below can only
+    // succeed if bob's session state genuinely survived the restart.
+    expect(second.single.cipherType, CiphertextMessage.whisperType,
+        reason: 'prekey must already be acknowledged, forcing the '
+            'post-restart message onto the whisper (no-fallback) path');
 
     final plain = await revived.decryptFrom(
       senderUserId: 'alice',
