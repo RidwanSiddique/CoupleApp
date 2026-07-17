@@ -32,16 +32,12 @@ class SignalSessionService {
   SignalSessionService({
     required SignalDb db,
     required KeyVault vault,
-    required PreKeyBundleSource bundles,
-    required String selfUserId,
-    required int selfDeviceNum,
-  })  : store = DriftSignalStore(db, vault),
-        _bundles = bundles,
-        _selfUserId = selfUserId,
-        _selfDeviceNum = selfDeviceNum;
+    required this._bundles,
+    required this._selfUserId,
+    required this._selfDeviceNum,
+  })  : _store = DriftSignalStore(db, vault);
 
-  /// Exposed so tests can seed this device's own prekeys.
-  final DriftSignalStore store;
+  final DriftSignalStore _store;
   final PreKeyBundleSource _bundles;
   final String _selfUserId;
   final int _selfDeviceNum;
@@ -68,7 +64,7 @@ class SignalSessionService {
     for (final t in targets) {
       final address = SignalProtocolAddress(t.userId, t.deviceNum);
       await _ensureSession(address);
-      final cipher = SessionCipher.fromStore(store, address);
+      final cipher = SessionCipher.fromStore(_store, address);
       final message = await cipher.encrypt(plaintext);
       copies.add(EncryptedCopy(
         userId: t.userId,
@@ -87,7 +83,7 @@ class SignalSessionService {
     required int cipherType,
   }) async {
     final address = SignalProtocolAddress(senderUserId, senderDeviceNum);
-    final cipher = SessionCipher.fromStore(store, address);
+    final cipher = SessionCipher.fromStore(_store, address);
 
     if (cipherType == CiphertextMessage.prekeyType) {
       // X3DH: processing this establishes the session on our side.
@@ -98,7 +94,7 @@ class SignalSessionService {
 
   /// X3DH only when we have no session for this address yet.
   Future<void> _ensureSession(SignalProtocolAddress address) async {
-    if (await store.containsSession(address)) return;
+    if (await _store.containsSession(address)) return;
 
     final bundles = await _bundles.bundlesFor(address.getName());
     final match = bundles
@@ -108,7 +104,7 @@ class SignalSessionService {
       throw StateError(
           'No published bundle for ${address.getName()}:${address.getDeviceId()}');
     }
-    final builder = SessionBuilder.fromSignalStore(store, address);
+    final builder = SessionBuilder.fromSignalStore(_store, address);
     await builder.processPreKeyBundle(match.first.toPreKeyBundle());
   }
 }

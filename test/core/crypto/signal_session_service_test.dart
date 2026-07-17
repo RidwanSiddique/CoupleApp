@@ -9,6 +9,7 @@ import 'package:sakinah/core/crypto/prekey_bundle_source.dart';
 import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_keys.dart';
 import 'package:sakinah/core/crypto/signal_session_service.dart';
+import 'package:sakinah/core/crypto/stores/drift_signal_store.dart';
 import 'package:sakinah/core/storage/signal_db.dart';
 
 /// One simulated device: its own DB, vault and published bundle.
@@ -64,11 +65,14 @@ Future<_Device> _makeDevice(String userId, int deviceNum,
     selfDeviceNum: deviceNum,
   );
   // Its own prekeys must be in its store so incoming prekey messages resolve.
+  // Construct the store directly from the same DB and vault instances;
+  // it's a stateless adapter, so a second instance reads/writes the same rows.
+  final store = DriftSignalStore(d.db, d.vault);
   for (final entry in d.generated.private.oneTimePrekeysSerialized.entries) {
-    await d.service.store
+    await store
         .storePreKey(entry.key, PreKeyRecord.fromBuffer(entry.value));
   }
-  await d.service.store.storeSignedPreKey(
+  await store.storeSignedPreKey(
     d.generated.public.signedPrekeyId,
     SignedPreKeyRecord.fromSerialized(d.generated.private.signedPrekeySerialized),
   );
