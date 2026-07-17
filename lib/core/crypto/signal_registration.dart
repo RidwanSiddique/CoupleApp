@@ -4,8 +4,10 @@ import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart' as sig;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../storage/signal_db.dart';
 import 'key_vault.dart';
 import 'signal_keys.dart';
+import 'stores/drift_signal_store.dart';
 
 abstract class DeviceRegistrar {
   Future<int> register({
@@ -42,10 +44,10 @@ class SupabaseDeviceRegistrar implements DeviceRegistrar {
     final res = await _client.rpc('register_device_bundle', params: {
       'p_device_id': deviceId,
       'p_registration_id': registrationId,
-      'p_identity_pub': identityPub,
+      'p_identity_pub': _hex(identityPub),
       'p_signed_prekey_id': signedPrekeyId,
-      'p_signed_prekey_pub': signedPrekeyPub,
-      'p_signed_prekey_sig': signedPrekeySig,
+      'p_signed_prekey_pub': _hex(signedPrekeyPub),
+      'p_signed_prekey_sig': _hex(signedPrekeySig),
     });
     return res as int;
   }
@@ -62,7 +64,7 @@ class SupabaseDeviceRegistrar implements DeviceRegistrar {
           'user_id': uid,
           'device_num': deviceNum,
           'prekey_id': e.key,
-          'pub': e.value,
+          'pub': _hex(e.value),
         }
     ]);
   }
@@ -78,6 +80,25 @@ class SupabaseDeviceRegistrar implements DeviceRegistrar {
         .isFilter('consumed_at', null);
     return (rows as List).length;
   }
+}
+
+const _hexDigits = '0123456789abcdef';
+
+/// Encodes bytes as the `\x`-prefixed lowercase hex string PostgREST expects
+/// for `bytea` columns/params. Mirrors the decode side, [DeviceBundle._bytes]
+/// in prekey_bundle_source.dart.
+///
+/// WHY: PostgREST JSON-encodes a raw [Uint8List] as an int array
+/// (`[10,11,12,...]`), which Postgres rejects for `bytea` with
+/// "invalid input syntax for type bytea". The wire format bytea actually
+/// accepts over PostgREST is the `\x`-prefixed hex string produced here.
+String _hex(Uint8List bytes) {
+  final out = StringBuffer(r'\x');
+  for (final b in bytes) {
+    out.write(_hexDigits[(b >> 4) & 0xf]);
+    out.write(_hexDigits[b & 0xf]);
+  }
+  return out.toString();
 }
 
 /// Generate + publish this device's identity once. Idempotent: an existing
@@ -96,6 +117,7 @@ class SupabaseDeviceRegistrar implements DeviceRegistrar {
 ///     the signed prekey and one-time prekeys are regenerated fresh, which
 ///     is normal and safe.
 Future<int> ensureRegistered({
+  required SignalDb db,
   required KeyVault vault,
   required DeviceRegistrar registrar,
   int oneTimePrekeyCount = 20,
@@ -125,6 +147,25 @@ Future<int> ensureRegistered({
   );
   await vault.savePrivate(generated.private);
 
+  // Seed the local Drift stores with this device's own prekeys BEFORE any
+  // network call. SessionCipher/SessionBuilder read prekeys from these
+  // tables (not the KeyVault) when resolving an incoming PreKeySignalMessage,
+  // so without this, this device can never establish a session with anyone —
+  // it references prekey ids that were only ever written to the KeyVault and
+  // published to Supabase. Seeding first also means a network failure below
+  // still leaves a locally-consistent device (its own store already has the
+  // prekeys it just generated).
+  final store = DriftSignalStore(db, vault);
+  final private = generated.private;
+  for (final entry in private.oneTimePrekeysSerialized.entries) {
+    await store.storePreKey(
+        entry.key, sig.PreKeyRecord.fromBuffer(entry.value));
+  }
+  await store.storeSignedPreKey(
+    generated.public.signedPrekeyId,
+    sig.SignedPreKeyRecord.fromSerialized(private.signedPrekeySerialized),
+  );
+
   final pub = generated.public;
   final deviceNum = await registrar.register(
     deviceId: deviceId,
@@ -134,11 +175,18 @@ Future<int> ensureRegistered({
     signedPrekeyPub: pub.signedPrekeyPub,
     signedPrekeySig: pub.signedPrekeySig,
   );
-  await vault.saveDeviceNum(deviceNum);
 
+  // Upload one-time prekeys BEFORE persisting the device number. If this
+  // upload fails, saveDeviceNum below never runs, so the
+  // `hasIdentity && existingNum != null` short-circuit stays closed and the
+  // next call retries the whole tail end — including this upload.
+  // register_device_bundle upserts on (user_id, device_id) and reuses the
+  // existing device_num server-side, so re-running register() here is safe.
   await registrar.uploadOneTimePrekeys(
     deviceNum: deviceNum,
     prekeys: {for (final p in pub.oneTimePrekeys) p.id: p.pub},
   );
+  await vault.saveDeviceNum(deviceNum);
+
   return deviceNum;
 }

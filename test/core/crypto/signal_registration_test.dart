@@ -5,11 +5,17 @@ import 'package:sakinah/core/crypto/key_vault.dart';
 import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_keys.dart';
 import 'package:sakinah/core/crypto/signal_registration.dart';
+import 'package:sakinah/core/crypto/stores/drift_signal_store.dart';
+import 'package:sakinah/core/storage/signal_db.dart';
 
 class _FakeRegistrar implements DeviceRegistrar {
   int? registeredDeviceNum;
   Map<int, Uint8List> uploaded = {};
   int remaining = 0;
+
+  /// When true, [uploadOneTimePrekeys] throws instead of succeeding, to
+  /// simulate a network drop after [register] already returned a device_num.
+  bool failUpload = false;
 
   @override
   Future<int> register({
@@ -28,8 +34,12 @@ class _FakeRegistrar implements DeviceRegistrar {
   Future<void> uploadOneTimePrekeys({
     required int deviceNum,
     required Map<int, Uint8List> prekeys,
-  }) async =>
-      uploaded.addAll(prekeys);
+  }) async {
+    if (failUpload) {
+      throw Exception('simulated network drop');
+    }
+    uploaded.addAll(prekeys);
+  }
 
   @override
   Future<int> unconsumedPrekeyCount(int deviceNum) async => remaining;
@@ -38,10 +48,12 @@ class _FakeRegistrar implements DeviceRegistrar {
 void main() {
   test('ensureRegistered generates, registers and persists the device number',
       () async {
+    final db = SignalDb.memory();
     final vault = KeyVault(InMemorySecureStore());
     final registrar = _FakeRegistrar();
 
-    final deviceNum = await ensureRegistered(vault: vault, registrar: registrar);
+    final deviceNum =
+        await ensureRegistered(db: db, vault: vault, registrar: registrar);
 
     expect(deviceNum, 1);
     expect(await vault.readDeviceNum(), 1);
@@ -50,15 +62,39 @@ void main() {
     expect(registrar.uploaded, isNotEmpty);
   });
 
-  test('ensureRegistered is idempotent — a second call keeps the identity',
-      () async {
+  test(
+      'ensureRegistered seeds the local prekey stores so incoming prekey '
+      'messages can resolve', () async {
+    final db = SignalDb.memory();
     final vault = KeyVault(InMemorySecureStore());
     final registrar = _FakeRegistrar();
 
-    await ensureRegistered(vault: vault, registrar: registrar);
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
+
+    // Read straight from the Drift store — the same path SessionCipher uses
+    // during decrypt — rather than the KeyVault, since the whole point of
+    // this fix is that the two must not diverge.
+    final store = DriftSignalStore(db, vault);
+    expect(await store.containsSignedPreKey(1), isTrue,
+        reason: 'the signed prekey must be readable from the store SignalDb '
+            'decrypt reads from, not just the KeyVault');
+    for (final id in registrar.uploaded.keys) {
+      expect(await store.containsPreKey(id), isTrue,
+          reason: 'every uploaded one-time prekey id must also be present '
+              'in the local store');
+    }
+  });
+
+  test('ensureRegistered is idempotent — a second call keeps the identity',
+      () async {
+    final db = SignalDb.memory();
+    final vault = KeyVault(InMemorySecureStore());
+    final registrar = _FakeRegistrar();
+
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
     final firstIdentity = await vault.readIdentity();
 
-    await ensureRegistered(vault: vault, registrar: registrar);
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
 
     expect(await vault.readIdentity(), firstIdentity,
         reason: 'regenerating the identity would break every session');
@@ -67,6 +103,7 @@ void main() {
   test(
       'resumes without regenerating the identity when device_num was never persisted',
       () async {
+    final db = SignalDb.memory();
     final vault = KeyVault(InMemorySecureStore());
 
     // Seed the exact partial state: savePrivate + saveDeviceId succeeded
@@ -81,8 +118,8 @@ void main() {
     final registrationIdBefore = await vault.readRegistrationId();
     expect(await vault.readDeviceNum(), isNull);
 
-    final deviceNum =
-        await ensureRegistered(vault: vault, registrar: _FakeRegistrar());
+    final deviceNum = await ensureRegistered(
+        db: db, vault: vault, registrar: _FakeRegistrar());
 
     expect(await vault.readIdentity(), before,
         reason:
@@ -90,5 +127,36 @@ void main() {
     expect(await vault.readRegistrationId(), registrationIdBefore);
     expect(await vault.readDeviceNum(), deviceNum);
     expect(await vault.readDeviceNum(), isNotNull);
+  });
+
+  test(
+      'a failed one-time prekey upload does not persist device_num, so the '
+      'next call retries instead of leaving the server starved forever',
+      () async {
+    final db = SignalDb.memory();
+    final vault = KeyVault(InMemorySecureStore());
+    final failing = _FakeRegistrar()..failUpload = true;
+
+    await expectLater(
+      ensureRegistered(db: db, vault: vault, registrar: failing),
+      throwsException,
+    );
+
+    // The upload never completed, so device_num must NOT have been saved —
+    // otherwise the `hasIdentity && existingNum != null` short-circuit would
+    // permanently skip retrying the upload.
+    expect(await vault.readDeviceNum(), isNull,
+        reason: 'a failed upload must leave the retry guard open');
+    expect(failing.uploaded, isEmpty);
+
+    // Retry with a healthy registrar: it must actually retry the upload,
+    // not short-circuit, and must succeed this time.
+    final healthy = _FakeRegistrar();
+    final deviceNum =
+        await ensureRegistered(db: db, vault: vault, registrar: healthy);
+
+    expect(deviceNum, 1);
+    expect(await vault.readDeviceNum(), 1);
+    expect(healthy.uploaded, isNotEmpty);
   });
 }

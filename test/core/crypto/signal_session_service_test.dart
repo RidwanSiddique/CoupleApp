@@ -8,8 +8,8 @@ import 'package:sakinah/core/crypto/key_vault.dart';
 import 'package:sakinah/core/crypto/prekey_bundle_source.dart';
 import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_keys.dart';
+import 'package:sakinah/core/crypto/signal_registration.dart';
 import 'package:sakinah/core/crypto/signal_session_service.dart';
-import 'package:sakinah/core/crypto/stores/drift_signal_store.dart';
 import 'package:sakinah/core/storage/signal_db.dart';
 
 /// One simulated device: its own DB, vault and published bundle.
@@ -19,8 +19,74 @@ class _Device {
   final int deviceNum;
   late SignalDb db;
   late KeyVault vault;
-  late GeneratedKeyBundle generated;
+  late _Registered generated;
   late SignalSessionService service;
+}
+
+/// Minimal wrapper preserving the `d.generated.public` shape callers use.
+/// Only the public half is available to the test now: private material is
+/// generated and seeded into the DB/vault entirely inside the real
+/// [ensureRegistered], not handed back to the caller — that's the whole
+/// point of exercising the production path instead of hand-seeding.
+class _Registered {
+  const _Registered(this.public);
+  final PublicBundle public;
+}
+
+/// Records everything a real [DeviceRegistrar] would have sent to the
+/// backend and reassembles it into the [PublicBundle] a spouse's device
+/// would fetch back via [PreKeyBundleSource], so tests can exercise the real
+/// [ensureRegistered] without a live Supabase.
+class _RecordingRegistrar implements DeviceRegistrar {
+  _RecordingRegistrar(this.deviceNum);
+  final int deviceNum;
+  PublicBundle? published;
+
+  String? _deviceId;
+  int? _registrationId;
+  Uint8List? _identityPub;
+  int? _signedPrekeyId;
+  Uint8List? _signedPrekeyPub;
+  Uint8List? _signedPrekeySig;
+
+  @override
+  Future<int> register({
+    required String deviceId,
+    required int registrationId,
+    required Uint8List identityPub,
+    required int signedPrekeyId,
+    required Uint8List signedPrekeyPub,
+    required Uint8List signedPrekeySig,
+  }) async {
+    _deviceId = deviceId;
+    _registrationId = registrationId;
+    _identityPub = identityPub;
+    _signedPrekeyId = signedPrekeyId;
+    _signedPrekeyPub = signedPrekeyPub;
+    _signedPrekeySig = signedPrekeySig;
+    return deviceNum;
+  }
+
+  @override
+  Future<void> uploadOneTimePrekeys({
+    required int deviceNum,
+    required Map<int, Uint8List> prekeys,
+  }) async {
+    published = PublicBundle(
+      registrationId: _registrationId!,
+      deviceId: _deviceId!,
+      identityPub: _identityPub!,
+      signedPrekeyId: _signedPrekeyId!,
+      signedPrekeyPub: _signedPrekeyPub!,
+      signedPrekeySig: _signedPrekeySig!,
+      oneTimePrekeys: [
+        for (final e in prekeys.entries) PublicPrekey(id: e.key, pub: e.value),
+      ],
+    );
+  }
+
+  @override
+  Future<int> unconsumedPrekeyCount(int deviceNum) async => 0;
 }
 
 class _FakeBundles implements PreKeyBundleSource {
@@ -47,34 +113,32 @@ class _FakeBundles implements PreKeyBundleSource {
 }
 
 /// Builds a fully independent device: its own in-memory DB and its own isolated
-/// vault, with its identity and prekeys already loaded. Devices never share
-/// state, so any number can be active at once.
+/// vault, registered through the real [ensureRegistered] — the same path
+/// production uses — against a fake [DeviceRegistrar] that stands in for the
+/// backend. Devices never share state, so any number can be active at once.
+///
+/// This deliberately does NOT hand-seed the prekey stores: ensureRegistered
+/// itself must leave the device able to receive prekey messages, or these
+/// tests (round-trip, restart survival, etc.) fail for real.
 Future<_Device> _makeDevice(String userId, int deviceNum,
     List<_Device> registry) async {
   final d = _Device(userId, deviceNum);
   d.db = SignalDb.memory();
   d.vault = KeyVault(InMemorySecureStore());
-  d.generated = generateBundle(deviceId: '$userId-$deviceNum');
-  await d.vault.savePrivate(d.generated.private);
-  await d.vault.saveDeviceNum(deviceNum);
+
+  final registrar = _RecordingRegistrar(deviceNum);
+  final assignedNum =
+      await ensureRegistered(db: d.db, vault: d.vault, registrar: registrar);
+  expect(assignedNum, deviceNum,
+      reason: 'test setup assumes the fake registrar\'s device_num is used');
+  d.generated = _Registered(registrar.published!);
+
   d.service = SignalSessionService(
     db: d.db,
     vault: d.vault,
     bundles: _FakeBundles(registry),
     selfUserId: userId,
     selfDeviceNum: deviceNum,
-  );
-  // Its own prekeys must be in its store so incoming prekey messages resolve.
-  // Construct the store directly from the same DB and vault instances;
-  // it's a stateless adapter, so a second instance reads/writes the same rows.
-  final store = DriftSignalStore(d.db, d.vault);
-  for (final entry in d.generated.private.oneTimePrekeysSerialized.entries) {
-    await store
-        .storePreKey(entry.key, PreKeyRecord.fromBuffer(entry.value));
-  }
-  await store.storeSignedPreKey(
-    d.generated.public.signedPrekeyId,
-    SignedPreKeyRecord.fromSerialized(d.generated.private.signedPrekeySerialized),
   );
   return d;
 }
@@ -300,6 +364,23 @@ void main() {
 
     expect(copies, hasLength(1));
     expect(copies.single.cipherType, CiphertextMessage.prekeyType);
+
+    // The type alone proves nothing — prekeyType is what the FIRST message
+    // to any device looks like regardless of whether the handshake is
+    // actually sound; a garbage/mismatched bundle would produce the same
+    // type and still pass. The claim of this test is that a session
+    // establishes correctly from the signed prekey ALONE (no one-time
+    // prekey), so bob must actually decrypt it and recover the plaintext.
+    final plain = await bob.service.decryptFrom(
+      senderUserId: 'alice',
+      senderDeviceNum: 1,
+      ciphertext: copies.single.ciphertext,
+      cipherType: copies.single.cipherType,
+    );
+    expect(utf8.decode(plain), 'hi',
+        reason: 'a session established from the signed prekey alone must '
+            'still round-trip real plaintext, not just produce the right '
+            'wire type');
   });
 }
 
