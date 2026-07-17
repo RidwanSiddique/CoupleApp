@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/domain/auth_controller.dart';
+import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/otp_screen.dart';
+import '../../features/auth/presentation/reset_password_screen.dart';
 import '../../features/auth/presentation/sign_in_screen.dart';
+import '../../features/auth/presentation/sign_up_screen.dart';
 import '../../features/care/presentation/care_screen.dart';
 import '../../features/cycle/presentation/cycle_screen.dart';
 import '../../features/daily/presentation/question_screen.dart';
@@ -37,6 +40,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isSplash = path == '/splash';
       final isAuthRoute = path.startsWith('/auth');
       final isPair = path == '/pair';
+      // Verifying a recovery code signs the user in, but the new password
+      // isn't set until they submit. Let them stay here rather than being
+      // bounced to /home mid-flow.
+      final isResetPassword = path == '/auth/reset-password';
       final isOnboarding = path == '/onboarding';
 
       // Still resolving auth: stay on splash.
@@ -47,6 +54,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (!signedIn) {
         return isAuthRoute ? null : '/auth/sign-in';
       }
+
+      // Recovery session in progress: the password isn't saved yet, so let the
+      // user finish here. The screen navigates onward itself once it's set.
+      if (isResetPassword) return null;
 
       // Wait for the own profile to have a resolved value before deciding
       // whether onboarding is needed — otherwise the user briefly sees the
@@ -87,10 +98,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const SignInScreen(),
       ),
       GoRoute(
+        path: '/auth/sign-up',
+        builder: (_, _) => const SignUpScreen(),
+      ),
+      GoRoute(
+        path: '/auth/forgot-password',
+        builder: (_, _) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/auth/reset-password',
+        builder: (_, state) {
+          final email = state.uri.queryParameters['email'] ?? '';
+          return ResetPasswordScreen(email: email);
+        },
+      ),
+      GoRoute(
         path: '/auth/otp',
         builder: (_, state) {
           final email = state.uri.queryParameters['email'] ?? '';
-          return OtpScreen(email: email);
+          final purpose = state.uri.queryParameters['purpose'] == 'signup'
+              ? OtpPurpose.signUp
+              : OtpPurpose.signIn;
+          return OtpScreen(email: email, purpose: purpose);
         },
       ),
       GoRoute(

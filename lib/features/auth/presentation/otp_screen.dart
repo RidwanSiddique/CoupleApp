@@ -12,10 +12,24 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/widgets.dart';
 import '../domain/auth_controller.dart';
 
+/// Why we're asking for a code — decides which verify call is made.
+enum OtpPurpose {
+  /// Passwordless sign-in (also creates the account for a new email).
+  signIn,
+
+  /// Confirming a just-created email/password account.
+  signUp,
+}
+
 class OtpScreen extends ConsumerStatefulWidget {
-  const OtpScreen({super.key, required this.email});
+  const OtpScreen({
+    super.key,
+    required this.email,
+    this.purpose = OtpPurpose.signIn,
+  });
 
   final String email;
+  final OtpPurpose purpose;
 
   @override
   ConsumerState<OtpScreen> createState() => _OtpScreenState();
@@ -95,10 +109,13 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       _error = null;
     });
     try {
-      await ref.read(authRepositoryProvider).verifyEmailOtp(
-            email: widget.email,
-            token: code,
-          );
+      final repo = ref.read(authRepositoryProvider);
+      switch (widget.purpose) {
+        case OtpPurpose.signIn:
+          await repo.verifyEmailOtp(email: widget.email, token: code);
+        case OtpPurpose.signUp:
+          await repo.verifySignupOtp(email: widget.email, token: code);
+      }
       await ref.read(signalBootstrapProvider).ensureBundle();
       unawaited(SakHaptics.medium());
     } on AppFailure catch (e) {

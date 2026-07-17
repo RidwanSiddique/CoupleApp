@@ -39,17 +39,79 @@ class AuthRepository {
     }
   }
 
-  Future<AuthResponse> signUpWithPassword({
+  /// Sign up with the profile captured on the form.
+  ///
+  /// With "Confirm email" on, no session comes back here — the profile is sent
+  /// as auth metadata and `handle_new_auth_user` persists it to public.users
+  /// server-side, so it survives until the user confirms and signs in.
+  Future<AuthResponse> signUpWithProfile({
     required String email,
     required String password,
-    String? displayName,
+    required String displayName,
+    required String gender,
+    required String madhhab,
   }) async {
     try {
       return await _client.auth.signUp(
         email: email,
         password: password,
-        data: displayName == null ? null : {'display_name': displayName},
+        data: {
+          'display_name': displayName,
+          'gender': gender,
+          'madhhab': madhhab,
+        },
       );
+    } on AuthException catch (e) {
+      throw AuthFailure(e.message);
+    }
+  }
+
+  /// Emails a recovery code (the "Reset Password" template must include
+  /// `{{ .Token }}`, otherwise there is no code to enter).
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _client.auth.resetPasswordForEmail(email);
+    } on AuthException catch (e) {
+      throw AuthFailure(e.message);
+    }
+  }
+
+  /// Confirms a sign-up with the emailed code; returns a session.
+  Future<AuthResponse> verifySignupOtp({
+    required String email,
+    required String token,
+  }) async {
+    try {
+      return await _client.auth.verifyOTP(
+        type: OtpType.signup,
+        email: email,
+        token: token,
+      );
+    } on AuthException catch (e) {
+      throw AuthFailure(e.message);
+    }
+  }
+
+  /// Verifies a recovery code; returns a session so the password can be set.
+  Future<AuthResponse> verifyRecoveryOtp({
+    required String email,
+    required String token,
+  }) async {
+    try {
+      return await _client.auth.verifyOTP(
+        type: OtpType.recovery,
+        email: email,
+        token: token,
+      );
+    } on AuthException catch (e) {
+      throw AuthFailure(e.message);
+    }
+  }
+
+  /// Sets a new password for the currently-authenticated user.
+  Future<void> updatePassword(String newPassword) async {
+    try {
+      await _client.auth.updateUser(UserAttributes(password: newPassword));
     } on AuthException catch (e) {
       throw AuthFailure(e.message);
     }

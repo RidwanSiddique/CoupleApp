@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/env.dart';
 import '../../../core/errors/failures.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/platform/haptics.dart';
@@ -227,12 +228,32 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     },
                   ),
                 ),
-                const SizedBox(height: SakSpace.xl),
+                if (_mode == _Mode.password)
+                  SakEnter(
+                    delay: const Duration(milliseconds: 760),
+                    child: SakButton(
+                      label: 'Forgot password?',
+                      variant: SakButtonVariant.text,
+                      size: SakButtonSize.small,
+                      onPressed: () => context.push('/auth/forgot-password'),
+                    ),
+                  ),
+                const SizedBox(height: SakSpace.lg),
                 SakEnter(
                   delay: const Duration(milliseconds: 800),
+                  child: SakButton(
+                    label: 'Create an account',
+                    variant: SakButtonVariant.text,
+                    size: SakButtonSize.small,
+                    onPressed: () => context.push('/auth/sign-up'),
+                  ),
+                ),
+                const SizedBox(height: SakSpace.lg),
+                SakEnter(
+                  delay: const Duration(milliseconds: 840),
                   child: Text(
                     _mode == _Mode.otp
-                        ? "We'll email you a 6-digit code. No password needed."
+                        ? "We'll email you a ${Env.otpLength}-digit code. No password needed."
                         : "Signing in creates your secure keys for chat.",
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
