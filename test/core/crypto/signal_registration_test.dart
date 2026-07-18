@@ -186,6 +186,42 @@ void main() {
     expect(secondPrekeyIds.first, greaterThan(firstPrekeyIds.last),
         reason: 'prekey ids must never be reissued with different key material');
   });
+
+  test('replenish tops up to topUpTo using fresh, never-reused ids', () async {
+    final db = SignalDb.memory();
+    addTearDown(db.close);
+    final vault = KeyVault(InMemorySecureStore());
+    final registrar = _FakeRegistrar();
+
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
+    final initialIds = registrar.uploaded.keys.toList()..sort();
+    registrar.uploaded.clear();
+    registrar.remaining = 3; // server says only 3 unconsumed left
+
+    await replenishPrekeysIfLow(
+        db: db, vault: vault, registrar: registrar, threshold: 10, topUpTo: 20);
+
+    final topUpIds = registrar.uploaded.keys.toList()..sort();
+    expect(topUpIds.length, 17, reason: 'tops up 3 -> 20');
+    expect(topUpIds.first, greaterThan(initialIds.last),
+        reason: 'must never reissue an id that was already published');
+  });
+
+  test('replenish does nothing when above threshold', () async {
+    final db = SignalDb.memory();
+    addTearDown(db.close);
+    final vault = KeyVault(InMemorySecureStore());
+    final registrar = _FakeRegistrar();
+
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
+    registrar.uploaded.clear();
+    registrar.remaining = 15;
+
+    await replenishPrekeysIfLow(
+        db: db, vault: vault, registrar: registrar, threshold: 10, topUpTo: 20);
+
+    expect(registrar.uploaded, isEmpty);
+  });
 }
 
 Future<List<int>> _signedPrekeyIds(SignalDb db) async {

@@ -206,5 +206,47 @@ Future<int> ensureRegistered({
   );
   await vault.saveDeviceNum(deviceNum);
 
+  // Non-fatal: a failed top-up degrades handshakes, it doesn't break the device.
+  try {
+    await replenishPrekeysIfLow(db: db, vault: vault, registrar: registrar);
+  } catch (_) {}
+
   return deviceNum;
+}
+
+/// Top up this device's one-time prekeys when the server pool runs low.
+///
+/// Ids come from the persisted counter, so a top-up can never reissue an id the
+/// spouse already holds under different key material.
+///
+/// Failure is non-fatal: the device still works, its handshakes just degrade to
+/// signed-prekey-only until the next attempt.
+Future<void> replenishPrekeysIfLow({
+  required SignalDb db,
+  required KeyVault vault,
+  required DeviceRegistrar registrar,
+  int threshold = 10,
+  int topUpTo = 20,
+}) async {
+  final deviceNum = await vault.readDeviceNum();
+  if (deviceNum == null) return; // not registered yet
+
+  final remaining = await registrar.unconsumedPrekeyCount(deviceNum);
+  if (remaining >= threshold) return;
+
+  final need = topUpTo - remaining;
+  if (need <= 0) return;
+
+  final firstId = await KeyCounters(db).nextPrekeyId(need);
+  final batch = generatePrekeyBatch(firstPrekeyId: firstId, count: need);
+
+  final store = DriftSignalStore(db, vault);
+  for (final e in batch.privateSerialized.entries) {
+    await store.storePreKey(e.key, sig.PreKeyRecord.fromBuffer(e.value));
+  }
+
+  await registrar.uploadOneTimePrekeys(
+    deviceNum: deviceNum,
+    prekeys: {for (final p in batch.publics) p.id: p.pub},
+  );
 }
