@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 
+import '../errors/failures.dart';
 import '../storage/signal_db.dart';
 import 'key_vault.dart';
 import 'prekey_bundle_source.dart';
@@ -102,8 +103,8 @@ class SignalSessionService {
     final bundle =
         await _bundles.bundleFor(address.getName(), address.getDeviceId());
     if (bundle == null) {
-      throw StateError(
-          'No published bundle for ${address.getName()}:${address.getDeviceId()}');
+      throw UnknownFailure(
+          'No device bundle available for ${address.getName()} device ${address.getDeviceId()}');
     }
     final builder = SessionBuilder.fromSignalStore(_store, address);
     await builder.processPreKeyBundle(bundle.toPreKeyBundle());

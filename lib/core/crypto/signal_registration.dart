@@ -125,7 +125,16 @@ Future<int> ensureRegistered({
 }) async {
   final existingNum = await vault.readDeviceNum();
   final hasIdentity = await vault.hasIdentity();
-  if (hasIdentity && existingNum != null) return existingNum;
+  if (hasIdentity && existingNum != null) {
+    // App start of an already-registered device: this is the steady-state
+    // path taken on every launch, so it's the only reliable place to top up
+    // a prekey pool that consumption has drained since last time. Non-fatal:
+    // a failed top-up degrades handshakes, it doesn't break the device.
+    try {
+      await replenishPrekeysIfLow(db: db, vault: vault, registrar: registrar);
+    } catch (_) {}
+    return existingNum;
+  }
 
   var deviceId = await vault.deviceId();
   deviceId ??= const Uuid().v4();

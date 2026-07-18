@@ -207,6 +207,37 @@ void main() {
         reason: 'must never reissue an id that was already published');
   });
 
+  test(
+      'ensureRegistered replenishes prekeys on the already-registered '
+      'restart path (app start), not just on fresh registration', () async {
+    final db = SignalDb.memory();
+    addTearDown(db.close);
+    final vault = KeyVault(InMemorySecureStore());
+    final registrar = _FakeRegistrar();
+
+    await ensureRegistered(db: db, vault: vault, registrar: registrar);
+    final initialIds = registrar.uploaded.keys.toList()..sort();
+
+    // Simulate the server pool having drained since registration, and
+    // clear the upload record so we can tell whether THIS call uploads.
+    registrar.remaining = 3;
+    registrar.uploaded.clear();
+
+    // Device is already fully registered, so this hits the
+    // `hasIdentity && existingNum != null` short-circuit.
+    final deviceNum =
+        await ensureRegistered(db: db, vault: vault, registrar: registrar);
+
+    expect(deviceNum, await vault.readDeviceNum());
+    expect(registrar.uploaded, isNotEmpty,
+        reason: 'app start of an already-registered device must top up a '
+            'low prekey pool, not just return early and skip replenish');
+    final topUpIds = registrar.uploaded.keys.toList()..sort();
+    expect(topUpIds.first, greaterThan(initialIds.last),
+        reason: 'the restart-path top-up must never reissue an id already '
+            'published');
+  });
+
   test('replenish does nothing when above threshold', () async {
     final db = SignalDb.memory();
     addTearDown(db.close);
