@@ -6,6 +6,7 @@ import '../../auth/domain/auth_controller.dart';
 import '../../pairing/domain/pairing_providers.dart';
 import '../data/chat_repository.dart';
 import '../data/chat_store.dart';
+import '../data/typing_channel.dart';
 import 'chat_service.dart';
 
 final chatRepositoryProvider = Provider<ChatRepository>((ref) {
@@ -65,4 +66,29 @@ final inboxPumpProvider = Provider<void>((ref) {
     }
   });
   ref.onDispose(sub.cancel);
+});
+
+/// Ephemeral typing-presence channel for the current conversation. Not
+/// stored, not encrypted — only created once chat is actually ready
+/// (signed in, paired, device registered) so no realtime connection is
+/// attempted before then.
+final typingChannelProvider = Provider<TypingChannel?>((ref) {
+  final chatService = ref.watch(chatServiceProvider).asData?.value;
+  final couple = ref.watch(currentCoupleProvider).asData?.value;
+  if (chatService == null || couple == null) return null;
+
+  final channel = TypingChannel(
+    supabase: ref.read(supabaseClientProvider),
+    conversationId: couple.id,
+  );
+  ref.onDispose(channel.dispose);
+  return channel;
+});
+
+/// Whether the spouse is currently typing. False whenever the typing
+/// channel isn't ready yet.
+final spouseTypingProvider = StreamProvider<bool>((ref) {
+  final channel = ref.watch(typingChannelProvider);
+  if (channel == null) return Stream.value(false);
+  return channel.spouseTyping;
 });

@@ -37,6 +37,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final messagesAsync = ref.watch(conversationMessagesProvider);
     final chatService = ref.watch(chatServiceProvider).asData?.value;
     final ready = chatService != null;
+    final typingChannel = ref.watch(typingChannelProvider);
+    final spouseTyping = ref.watch(spouseTypingProvider).asData?.value ?? false;
 
     return SakScaffold(
       title: 'Chat',
@@ -121,9 +123,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
             ),
+          if (spouseTyping)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: SakSpace.lg,
+                vertical: SakSpace.xs,
+              ),
+              child: Text(
+                'typing…',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
           _Composer(
             controller: _controller,
             enabled: ready,
+            onChanged: (_) => typingChannel?.onKeystroke(),
             onSend: () => _send(chatService),
           ),
         ],
@@ -209,11 +226,13 @@ class _Composer extends StatelessWidget {
     required this.controller,
     required this.enabled,
     required this.onSend,
+    this.onChanged,
   });
 
   final TextEditingController controller;
   final bool enabled;
   final VoidCallback onSend;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +254,7 @@ class _Composer extends StatelessWidget {
               minLines: 1,
               maxLines: 5,
               textInputAction: TextInputAction.newline,
+              onChanged: onChanged,
               decoration: InputDecoration(
                 hintText: enabled ? 'Message…' : 'Setting up secure chat…',
                 filled: true,
