@@ -37,16 +37,16 @@ create index message_envelopes_message_idx on public.message_envelopes(message_i
 
 alter table public.message_envelopes enable row level security;
 
--- Couple members may insert (the sender writes all envelopes).
-create policy envelopes_insert on public.message_envelopes
-  for insert with check (public.is_couple_member(couple_id));
+-- No direct insert policy: envelopes may only be written via the SECURITY
+-- DEFINER send_message() RPC, which validates recipient_id/sender_id are
+-- both members of the sender's couple before inserting.
 -- A device reads/deletes only its own envelopes.
 create policy envelopes_read_own on public.message_envelopes
   for select using (recipient_id = auth.uid());
 create policy envelopes_delete_own on public.message_envelopes
   for delete using (recipient_id = auth.uid());
 
-grant select, insert, delete on public.message_envelopes to authenticated;
+grant select, delete on public.message_envelopes to authenticated;
 
 -- Atomic send: message row + N envelopes + bump conversation.
 create or replace function public.send_message(
@@ -79,6 +79,14 @@ begin
     returning * into v_msg;
 
   for e in select * from jsonb_array_elements(p_envelopes) loop
+    if (e->>'recipient_id')::uuid not in (
+      select member_a from public.couples where id = v_cid
+      union
+      select member_b from public.couples where id = v_cid
+    ) then
+      raise exception 'invalid_recipient';
+    end if;
+
     insert into public.message_envelopes
       (message_id, couple_id, sender_id, sender_device_num,
        recipient_id, recipient_device_num, cipher_type, ciphertext)
