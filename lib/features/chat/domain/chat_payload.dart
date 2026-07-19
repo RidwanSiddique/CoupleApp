@@ -58,13 +58,15 @@ ChatPayload decodePayload(Uint8List bytes) {
   }
   if ((m['v'] as num?) != _payloadVersion) return const UnsupportedPayload();
   return switch (m['kind']) {
-    'text' => TextPayload(
-        body: (m['body'] ?? '') as String,
-        replyToMessageId: m['reply'] as String?,
+    'text' when m['body'] is String && (m['reply'] == null || m['reply'] is String) =>
+      TextPayload(
+        body: m['body'] as String,
+        replyToMessageId: m['reply'] is String ? m['reply'] as String : null,
       ),
-    'reaction' => ReactionPayload(
-        targetMessageId: (m['target'] ?? '') as String,
-        emoji: (m['emoji'] ?? '') as String,
+    'reaction' when m['target'] is String && m['emoji'] is String =>
+      ReactionPayload(
+        targetMessageId: m['target'] as String,
+        emoji: m['emoji'] as String,
         add: m['op'] != 'remove',
       ),
     _ => const UnsupportedPayload(),

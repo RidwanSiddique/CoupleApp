@@ -32,6 +32,46 @@ void main() {
     final bytes = Uint8ListFromString(future);
     expect(decodePayload(bytes), isA<UnsupportedPayload>());
   });
+
+  test('text payload with numeric body never throws and returns UnsupportedPayload',
+      () {
+    final bytes = Uint8ListFromString('{"v":1,"kind":"text","body":123}');
+    expect(() => decodePayload(bytes), returnsNormally);
+    expect(decodePayload(bytes), isA<UnsupportedPayload>());
+  });
+
+  test(
+      'text payload with numeric reply never throws and returns UnsupportedPayload',
+      () {
+    final bytes =
+        Uint8ListFromString('{"v":1,"kind":"text","body":"hello","reply":123}');
+    expect(() => decodePayload(bytes), returnsNormally);
+    expect(decodePayload(bytes), isA<UnsupportedPayload>());
+  });
+
+  test(
+      'reaction with numeric target never throws and returns UnsupportedPayload',
+      () {
+    final bytes = Uint8ListFromString(
+        '{"v":1,"kind":"reaction","target":123,"emoji":"❤️","op":"add"}');
+    expect(() => decodePayload(bytes), returnsNormally);
+    expect(decodePayload(bytes), isA<UnsupportedPayload>());
+  });
+
+  test(
+      'reaction with numeric emoji never throws and returns UnsupportedPayload',
+      () {
+    final bytes = Uint8ListFromString(
+        '{"v":1,"kind":"reaction","target":"m1","emoji":456,"op":"add"}');
+    expect(() => decodePayload(bytes), returnsNormally);
+    expect(decodePayload(bytes), isA<UnsupportedPayload>());
+  });
+
+  test('random non-JSON bytes never throws and returns UnsupportedPayload', () {
+    final bytes = Uint8List.fromList([0xFF, 0xFE, 0xFD, 0xFC]);
+    expect(() => decodePayload(bytes), returnsNormally);
+    expect(decodePayload(bytes), isA<UnsupportedPayload>());
+  });
 }
 
 Uint8List Uint8ListFromString(String s) => Uint8List.fromList(utf8.encode(s));
