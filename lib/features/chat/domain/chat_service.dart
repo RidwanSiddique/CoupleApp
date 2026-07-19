@@ -84,9 +84,23 @@ class ChatService {
         messageId: targetMessageId, reactorId: selfUserId, emoji: emoji, add: add);
   }
 
+  Future<void> _inboxLock = Future<void>.value();
+
   /// Decrypt one inbound envelope, apply it, acknowledge, and delete it.
   /// Never throws for a bad envelope — logs via return.
-  Future<void> handleInboxRow(Map<String, dynamic> env) async {
+  ///
+  /// Serialized: Supabase realtime delivers overlapping row batches, and Dart
+  /// does not await an async stream listener before delivering the next event,
+  /// so two calls could otherwise run concurrently. `decryptFrom` mutates
+  /// Double Ratchet state, which is not concurrency-safe, so inbound handling
+  /// must run one at a time.
+  Future<void> handleInboxRow(Map<String, dynamic> env) {
+    final result = _inboxLock.then((_) => _handleInboxRow(env));
+    _inboxLock = result.catchError((_) {});
+    return result;
+  }
+
+  Future<void> _handleInboxRow(Map<String, dynamic> env) async {
     // Only handle envelopes addressed to THIS device. A user's other devices
     // share the same recipient_id and appear in this stream, but their
     // envelopes are theirs to fetch — we must not read or delete them.

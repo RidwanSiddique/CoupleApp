@@ -556,4 +556,76 @@ void main() {
     await chat.handleInboxRow(env);
     expect(repo.deleteEnvelopeCalls.where((e) => e == 'bad-env').length, 1);
   });
+
+  test('serializes inbound processing so concurrent decrypts never overlap',
+      () async {
+    // Realtime delivers overlapping batches and Dart does not await an async
+    // stream listener before the next event, so handleInboxRow can be invoked
+    // concurrently. decryptFrom mutates Double Ratchet state (not
+    // concurrency-safe), so inbound handling must be serialized.
+    final db = SignalDb.memory();
+    addTearDown(db.close);
+    final store = ChatStore(db);
+    final spy = _SpySession();
+    final localRepo = _FakeChatRepo();
+    final svc = ChatService(
+      session: spy,
+      repo: localRepo,
+      store: store,
+      selfUserId: selfUserId,
+      spouseUserId: spouseUserId,
+      selfDeviceNum: 1,
+    );
+
+    Map<String, dynamic> env(String id) => {
+          'id': 'env-$id',
+          'message_id': id,
+          'sender_id': spouseUserId,
+          'sender_device_num': 1,
+          'recipient_device_num': 1,
+          'cipher_type': 2,
+          'ciphertext': 'aa',
+          'created_at': DateTime.utc(2026).toIso8601String(),
+        };
+
+    await Future.wait([
+      svc.handleInboxRow(env('m1')),
+      svc.handleInboxRow(env('m2')),
+      svc.handleInboxRow(env('m3')),
+    ]);
+
+    expect(spy.maxConcurrent, 1,
+        reason: 'inbound decrypts must never overlap (ratchet state is not '
+            'concurrency-safe)');
+    final rows = await store.watchConversation().first;
+    expect(rows.length, 3); // all three still processed + stored
+  });
+}
+
+/// A stand-in SignalSessionService that records how many `decryptFrom` calls
+/// are in flight at once, so a test can assert inbound handling is serialized.
+class _SpySession implements SignalSessionService {
+  int _active = 0;
+  int maxConcurrent = 0;
+
+  @override
+  Future<Uint8List> decryptFrom({
+    required String senderUserId,
+    required int senderDeviceNum,
+    required Uint8List ciphertext,
+    required int cipherType,
+  }) async {
+    _active++;
+    if (_active > maxConcurrent) maxConcurrent = _active;
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    _active--;
+    return Uint8List.fromList(encodePayload(const TextPayload(body: 'hi')));
+  }
+
+  @override
+  Future<List<EncryptedCopy>> encryptFor({
+    required String recipientUserId,
+    required Uint8List plaintext,
+  }) =>
+      throw UnimplementedError();
 }
