@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -155,7 +157,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty || service == null) return;
     final replyToMessageId = _replyToMessageId;
-    service.sendText(text, replyToMessageId: replyToMessageId);
+    // Fire-and-forget: sendText handles its own failure by marking the row
+    // 'failed'; we must not leave an unhandled async error.
+    unawaited(service.sendText(text, replyToMessageId: replyToMessageId));
     _controller.clear();
     setState(() {
       _replyToMessageId = null;

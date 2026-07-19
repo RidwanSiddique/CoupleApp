@@ -1,5 +1,6 @@
 // lib/features/chat/domain/chat_service.dart
 import 'dart:typed_data';
+import 'package:uuid/uuid.dart';
 import '../../../core/crypto/signal_session_service.dart';
 import '../data/chat_repository.dart';
 import '../data/chat_store.dart';
@@ -23,21 +24,32 @@ class ChatService {
   final int selfDeviceNum;
 
   Future<void> sendText(String body, {String? replyToMessageId}) async {
-    final payload = TextPayload(body: body, replyToMessageId: replyToMessageId);
-    final copies = await session.encryptFor(
-      recipientUserId: spouseUserId,
-      plaintext: encodePayload(payload),
-    );
-    final sent = await repo.sendEnvelopes(
-        senderDeviceNum: selfDeviceNum, copies: copies);
+    final id = const Uuid().v4();
+    final now = DateTime.now();
+    // Optimistic row shown immediately, before the network round-trip.
     await store.upsertMessage(
-      id: sent.messageId,
+      id: id,
       senderId: selfUserId,
       body: body,
       replyToMessageId: replyToMessageId,
-      createdAt: sent.createdAt,
-      status: 'sent',
+      createdAt: now,
+      status: 'sending',
     );
+    try {
+      final payload = TextPayload(body: body, replyToMessageId: replyToMessageId);
+      final copies = await session.encryptFor(
+        recipientUserId: spouseUserId,
+        plaintext: encodePayload(payload),
+      );
+      // The client-generated id is passed through as p_message_id so the
+      // server message shares this same id — required for receipts to land
+      // on this row instead of a different server-generated one.
+      await repo.sendEnvelopes(
+          senderDeviceNum: selfDeviceNum, copies: copies, messageId: id);
+      await store.setStatus(id, 'sent');
+    } catch (_) {
+      await store.setStatus(id, 'failed');
+    }
   }
 
   Future<void> sendReaction({

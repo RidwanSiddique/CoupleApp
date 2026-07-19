@@ -159,20 +159,31 @@ Future<_Device> _makeDevice(String userId, int deviceNum, List<_Device> registry
 class _FakeChatRepo extends ChatRepository {
   _FakeChatRepo() : super(SupabaseClient('http://localhost:0', 'fake-anon-key'));
 
-  final List<({int senderDeviceNum, List<EncryptedCopy> copies})> sendEnvelopesCalls = [];
+  final List<({int senderDeviceNum, List<EncryptedCopy> copies, String? messageId})>
+      sendEnvelopesCalls = [];
   final List<String> markDeliveredCalls = [];
   final List<String> deleteEnvelopeCalls = [];
 
   String nextMessageId = 'm-1';
   DateTime nextCreatedAt = DateTime.utc(2026, 1, 1);
 
+  /// When true, the next sendEnvelopes call throws instead of succeeding
+  /// (then resets to false), so tests can exercise the offline/failed path.
+  bool failNextSend = false;
+
   @override
   Future<({String messageId, DateTime createdAt})> sendEnvelopes({
     required int senderDeviceNum,
     required List<EncryptedCopy> copies,
+    String? messageId,
   }) async {
-    sendEnvelopesCalls.add((senderDeviceNum: senderDeviceNum, copies: copies));
-    return (messageId: nextMessageId, createdAt: nextCreatedAt);
+    sendEnvelopesCalls.add(
+        (senderDeviceNum: senderDeviceNum, copies: copies, messageId: messageId));
+    if (failNextSend) {
+      failNextSend = false;
+      throw Exception('network unreachable');
+    }
+    return (messageId: messageId ?? nextMessageId, createdAt: nextCreatedAt);
   }
 
   @override
@@ -232,9 +243,6 @@ void main() {
 
   test('sendText encodes, encrypts to the spouse, sends envelopes, and stores a local sent message',
       () async {
-    repo.nextMessageId = 'msg-sent-1';
-    repo.nextCreatedAt = DateTime.utc(2026, 1, 2, 10);
-
     await chat.sendText('as-salamu alaykum');
 
     expect(repo.sendEnvelopesCalls, hasLength(1));
@@ -246,24 +254,24 @@ void main() {
       call.copies.map((c) => '${c.userId}:${c.deviceNum}').toSet(),
       {'$spouseUserId:1', '$selfUserId:2'},
     );
+    // The id is now client-generated (not server-assigned) and passed
+    // through to sendEnvelopes as p_message_id so a receipt lands on the
+    // same row as the optimistic local copy.
+    expect(call.messageId, isNotNull);
 
-    expect(await store.messageExists('msg-sent-1'), isTrue);
+    expect(await store.messageExists(call.messageId!), isTrue);
     final rows = await store.watchConversation().first;
-    final row = rows.singleWhere((r) => r.id == 'msg-sent-1');
+    final row = rows.singleWhere((r) => r.id == call.messageId);
     expect(row.senderId, selfUserId);
     expect(row.body, 'as-salamu alaykum');
     expect(row.status, 'sent');
-    // Drift round-trips DateTime through an epoch value and hands back a
-    // local-zone DateTime, so compare instants rather than exact representation.
-    expect(row.createdAt.toUtc(), DateTime.utc(2026, 1, 2, 10));
   });
 
   test('sendText carries replyToMessageId through to the stored message', () async {
-    repo.nextMessageId = 'msg-sent-2';
     await chat.sendText('reply body', replyToMessageId: 'original-1');
 
     final rows = await store.watchConversation().first;
-    final row = rows.singleWhere((r) => r.id == 'msg-sent-2');
+    final row = rows.singleWhere((r) => r.body == 'reply body');
     expect(row.replyToMessageId, 'original-1');
   });
 
@@ -415,6 +423,22 @@ void main() {
     expect(await store.messageExists('msg-bad-1'), isFalse);
     expect(repo.deleteEnvelopeCalls, isNot(contains('env-bad')),
         reason: 'a bad envelope is left in place so it can be retried');
+  });
+
+  test('sendText stores a "sending" row, then "sent"; "failed" on send error', () async {
+    // Happy path: after sendText, the local row exists with status 'sent'.
+    await chat.sendText('salam');
+    final ok = (await store.watchConversation().first).last;
+    expect(ok.body, 'salam');
+    expect(ok.status, 'sent');
+
+    // Failure path: make the fake repo's sendEnvelopes throw once.
+    repo.failNextSend = true;
+    await chat.sendText('offline msg');
+    final failed = (await store.watchConversation().first)
+        .firstWhere((m) => m.body == 'offline msg');
+    expect(failed.status, 'failed',
+        reason: 'a failed send must leave a retryable failed row, not vanish');
   });
 
   test('sendReaction encodes, encrypts to the spouse, sends envelopes, and reflects the reaction locally',

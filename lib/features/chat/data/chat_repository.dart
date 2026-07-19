@@ -12,6 +12,7 @@ class ChatRepository {
   Future<({String messageId, DateTime createdAt})> sendEnvelopes({
     required int senderDeviceNum,
     required List<EncryptedCopy> copies,
+    String? messageId,
   }) async {
     final envelopes = [
       for (final c in copies)
@@ -25,6 +26,7 @@ class ChatRepository {
     final rows = await _client.rpc('send_message', params: {
       'p_sender_device_num': senderDeviceNum,
       'p_envelopes': envelopes,
+      if (messageId != null) 'p_message_id': messageId,
     });
     final row = (rows is List) ? rows.first : rows;
     final m = Map<String, dynamic>.from(row as Map);
