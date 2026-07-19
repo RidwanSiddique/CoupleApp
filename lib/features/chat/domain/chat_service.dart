@@ -1,5 +1,4 @@
 // lib/features/chat/domain/chat_service.dart
-import 'dart:convert';
 import 'dart:typed_data';
 import '../../../core/crypto/signal_session_service.dart';
 import '../data/chat_repository.dart';

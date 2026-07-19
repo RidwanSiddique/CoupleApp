@@ -411,4 +411,31 @@ void main() {
     expect(repo.deleteEnvelopeCalls, isNot(contains('env-bad')),
         reason: 'a bad envelope is left in place so it can be retried');
   });
+
+  test('sendReaction encodes, encrypts to the spouse, sends envelopes, and reflects the reaction locally',
+      () async {
+    const targetMessageId = 'target-msg-outbound';
+    const emoji = '❤️';
+
+    await chat.sendReaction(targetMessageId: targetMessageId, emoji: emoji, add: true);
+
+    // Assertion 1: repo.sendEnvelopes was called once
+    expect(repo.sendEnvelopesCalls, hasLength(1));
+    final call = repo.sendEnvelopesCalls.single;
+    expect(call.senderDeviceNum, 1);
+    // encryptFor fans out to the spouse's device(s) plus self's OTHER devices;
+    // here that's spouse:1 and self:2.
+    expect(
+      call.copies.map((c) => '${c.userId}:${c.deviceNum}').toSet(),
+      {'$spouseUserId:1', '$selfUserId:2'},
+    );
+
+    // Assertion 2: the local store reflects the reaction immediately
+    final reactions = await store.reactionsFor(targetMessageId);
+    expect(reactions, hasLength(1));
+    final reaction = reactions.single;
+    expect(reaction.reactorId, selfUserId,
+        reason: 'the sender reflects their own reaction locally immediately');
+    expect(reaction.emoji, emoji);
+  });
 }
