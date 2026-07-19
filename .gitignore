@@ -49,3 +49,4 @@ supabase/.temp/
 
 # Cloud Supabase dart-define config (real values)
 config/supabase.cloud.json
+config/supabase.local.json
