@@ -50,25 +50,29 @@ Uint8List encodePayload(ChatPayload p) {
 }
 
 ChatPayload decodePayload(Uint8List bytes) {
-  final Map<String, dynamic> m;
   try {
-    m = Map<String, dynamic>.from(jsonDecode(utf8.decode(bytes)) as Map);
+    final Map<String, dynamic> m =
+        Map<String, dynamic>.from(jsonDecode(utf8.decode(bytes)) as Map);
+
+    // Guard the version cast: check that v is a num AND matches the version
+    final v = m['v'];
+    if (v is! num || v != _payloadVersion) return const UnsupportedPayload();
+
+    return switch (m['kind']) {
+      'text' when m['body'] is String && (m['reply'] == null || m['reply'] is String) =>
+        TextPayload(
+          body: m['body'] as String,
+          replyToMessageId: m['reply'] is String ? m['reply'] as String : null,
+        ),
+      'reaction' when m['target'] is String && m['emoji'] is String =>
+        ReactionPayload(
+          targetMessageId: m['target'] as String,
+          emoji: m['emoji'] as String,
+          add: m['op'] != 'remove',
+        ),
+      _ => const UnsupportedPayload(),
+    };
   } catch (_) {
     return const UnsupportedPayload();
   }
-  if ((m['v'] as num?) != _payloadVersion) return const UnsupportedPayload();
-  return switch (m['kind']) {
-    'text' when m['body'] is String && (m['reply'] == null || m['reply'] is String) =>
-      TextPayload(
-        body: m['body'] as String,
-        replyToMessageId: m['reply'] is String ? m['reply'] as String : null,
-      ),
-    'reaction' when m['target'] is String && m['emoji'] is String =>
-      ReactionPayload(
-        targetMessageId: m['target'] as String,
-        emoji: m['emoji'] as String,
-        add: m['op'] != 'remove',
-      ),
-    _ => const UnsupportedPayload(),
-  };
 }

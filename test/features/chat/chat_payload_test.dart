@@ -72,6 +72,14 @@ void main() {
     expect(() => decodePayload(bytes), returnsNormally);
     expect(decodePayload(bytes), isA<UnsupportedPayload>());
   });
+
+  test(
+      'text payload with string version never throws and returns UnsupportedPayload',
+      () {
+    final bytes = Uint8ListFromString('{"v":"1","kind":"text","body":"hi"}');
+    expect(() => decodePayload(bytes), returnsNormally);
+    expect(decodePayload(bytes), isA<UnsupportedPayload>());
+  });
 }
 
 Uint8List Uint8ListFromString(String s) => Uint8List.fromList(utf8.encode(s));
