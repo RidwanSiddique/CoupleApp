@@ -26,16 +26,19 @@ class ChatService {
   Future<void> sendText(String body, {String? replyToMessageId}) async {
     final id = const Uuid().v4();
     final now = DateTime.now();
-    // Optimistic row shown immediately, before the network round-trip.
-    await store.upsertMessage(
-      id: id,
-      senderId: selfUserId,
-      body: body,
-      replyToMessageId: replyToMessageId,
-      createdAt: now,
-      status: 'sending',
-    );
+    // The whole body — including the optimistic write — is covered here so
+    // sendText never throws. It's invoked via unawaited(...) from _send, so
+    // an escaping exception would become an unhandled async error.
     try {
+      // Optimistic row shown immediately, before the network round-trip.
+      await store.upsertMessage(
+        id: id,
+        senderId: selfUserId,
+        body: body,
+        replyToMessageId: replyToMessageId,
+        createdAt: now,
+        status: 'sending',
+      );
       final payload = TextPayload(body: body, replyToMessageId: replyToMessageId);
       final copies = await session.encryptFor(
         recipientUserId: spouseUserId,
@@ -48,7 +51,12 @@ class ChatService {
           senderDeviceNum: selfDeviceNum, copies: copies, messageId: id);
       await store.setStatus(id, 'sent');
     } catch (_) {
-      await store.setStatus(id, 'failed');
+      try {
+        await store.setStatus(id, 'failed');
+      } catch (_) {
+        // The optimistic write itself may have failed, so there's no row to
+        // mark 'failed' against. Nothing more we can do here.
+      }
     }
   }
 

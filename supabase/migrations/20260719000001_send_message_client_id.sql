@@ -1,3 +1,5 @@
+drop function if exists public.send_message(integer, jsonb);
+
 create or replace function public.send_message(
   p_sender_device_num integer,
   p_envelopes jsonb,
