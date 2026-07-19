@@ -34,4 +34,20 @@ void main() {
     final rows = await store.watchConversation().first;
     expect(rows.map((r) => r.id), ['m1', 'm2']);
   });
+
+  test('applyReceipt updates delivered/read + derives status; only on an existing row', () async {
+    await store.upsertMessage(id: 'm1', senderId: 'me', body: 'hi',
+        createdAt: DateTime(2026), status: 'sent');
+    await store.applyReceipt(id: 'm1', deliveredAt: DateTime(2026, 1, 2));
+    var row = (await store.watchConversation().first).single;
+    expect(row.status, 'delivered');
+    expect(row.deliveredAt, isNotNull);
+    await store.applyReceipt(id: 'm1', readAt: DateTime(2026, 1, 3));
+    row = (await store.watchConversation().first).single;
+    expect(row.status, 'read');
+    expect(row.readAt, isNotNull);
+    // No-op on an unknown id (does not insert).
+    await store.applyReceipt(id: 'ghost', deliveredAt: DateTime(2026));
+    expect(await store.messageExists('ghost'), isFalse);
+  });
 }

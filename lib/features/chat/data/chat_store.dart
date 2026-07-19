@@ -36,6 +36,23 @@ class ChatStore {
         .write(ChatMessagesCompanion(status: Value(status)));
   }
 
+  Future<void> applyReceipt({
+    required String id,
+    DateTime? deliveredAt,
+    DateTime? readAt,
+  }) async {
+    final status = readAt != null
+        ? 'read'
+        : (deliveredAt != null ? 'delivered' : null);
+    await (_db.update(_db.chatMessages)..where((t) => t.id.equals(id))).write(
+      ChatMessagesCompanion(
+        deliveredAt: deliveredAt != null ? Value(deliveredAt) : const Value.absent(),
+        readAt: readAt != null ? Value(readAt) : const Value.absent(),
+        status: status != null ? Value(status) : const Value.absent(),
+      ),
+    );
+  }
+
   Future<bool> messageExists(String id) async {
     final row = await (_db.select(_db.chatMessages)
           ..where((t) => t.id.equals(id)))

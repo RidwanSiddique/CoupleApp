@@ -68,6 +68,32 @@ final inboxPumpProvider = Provider<void>((ref) {
   ref.onDispose(sub.cancel);
 });
 
+/// Streams the couple's `messages` rows and reflects the sender-side
+/// delivered/read receipts onto the local chat rows the sender authored.
+final receiptPumpProvider = Provider<void>((ref) {
+  final svc = ref.watch(chatServiceProvider).asData?.value;
+  final couple = ref.watch(currentCoupleProvider).asData?.value;
+  if (svc == null || couple == null) return;
+  final store = ref.read(chatStoreProvider);
+  final selfId = svc.selfUserId;
+  final sub =
+      ref.read(chatRepositoryProvider).watchMyMessages(couple.id).listen((rows) async {
+    for (final r in rows) {
+      if (r['sender_id'] != selfId) continue; // only our own sent messages
+      await store.applyReceipt(
+        id: r['id'] as String,
+        deliveredAt: r['delivered_at'] == null
+            ? null
+            : DateTime.parse(r['delivered_at'] as String),
+        readAt: r['read_at'] == null
+            ? null
+            : DateTime.parse(r['read_at'] as String),
+      );
+    }
+  });
+  ref.onDispose(sub.cancel);
+});
+
 /// Ephemeral typing-presence channel for the current conversation. Not
 /// stored, not encrypted — only created once chat is actually ready
 /// (signed in, paired, device registered) so no realtime connection is

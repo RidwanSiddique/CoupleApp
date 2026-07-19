@@ -31,6 +31,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // Keeps the inbox receive loop alive for as long as this screen is on
     // screen; no-op until chatServiceProvider resolves to a real service.
     ref.watch(inboxPumpProvider);
+    // Keeps the sender-side receipt pump alive so delivered/read ticks
+    // update on this device; no-op until chatServiceProvider resolves.
+    ref.watch(receiptPumpProvider);
 
     final theme = Theme.of(context);
     final myId = ref.watch(authSessionProvider).asData?.value?.user.id;
