@@ -64,6 +64,31 @@ class SignalMeta extends Table {
   Set<Column> get primaryKey => {key};
 }
 
+/// Durable local chat history. Chat decryption is one-shot (Signal ratchet
+/// consumes each message), so the plaintext is persisted here — consistent
+/// with the rest of this DB, which already stores Signal key material.
+class ChatMessages extends Table {
+  TextColumn get id => text()();
+  TextColumn get senderId => text()();
+  TextColumn get body => text().nullable()();
+  TextColumn get replyToMessageId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get deliveredAt => dateTime().nullable()();
+  DateTimeColumn get readAt => dateTime().nullable()();
+  TextColumn get status => text()(); // sending|sent|delivered|read|failed
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class ChatReactions extends Table {
+  TextColumn get messageId => text()();
+  TextColumn get reactorId => text()();
+  TextColumn get emoji => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {messageId, reactorId, emoji};
+}
+
 @DriftDatabase(tables: [
   SignalSessions,
   SignalPrekeys,
@@ -71,6 +96,8 @@ class SignalMeta extends Table {
   SignalIdentities,
   SignalIdentityChanges,
   SignalMeta,
+  ChatMessages,
+  ChatReactions,
 ])
 class SignalDb extends _$SignalDb {
   SignalDb() : super(driftDatabase(name: 'sakinah_signal'));
@@ -79,13 +106,17 @@ class SignalDb extends _$SignalDb {
   SignalDb.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
           if (from < 2) await m.createTable(signalMeta);
+          if (from < 3) {
+            await m.createTable(chatMessages);
+            await m.createTable(chatReactions);
+          }
         },
       );
 }
