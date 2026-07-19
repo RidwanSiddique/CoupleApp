@@ -148,6 +148,8 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: SakSpace.md),
                       const ScoreboardCard(),
                       const SizedBox(height: SakSpace.md),
+                      const _ChatTile(),
+                      const SizedBox(height: SakSpace.md),
                       if (isWife) ...[
                         const _CycleTile(),
                         const SizedBox(height: SakSpace.md),
@@ -420,6 +422,56 @@ class _NextPrayerCard extends StatelessWidget {
         'isha' => 'ٱلْعِشَاء',
         _ => '',
       };
+}
+
+class _ChatTile extends StatelessWidget {
+  const _ChatTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SakCard(
+      variant: SakCardVariant.tonal,
+      onTap: () => context.go('/home/chat'),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(SakRadius.md),
+            ),
+            child: Icon(
+              Icons.chat_bubble_outline,
+              size: 20,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: SakSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Chat', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  'Your private, end-to-end encrypted space.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right,
+            color: scheme.onSurface.withValues(alpha: 0.4),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _CycleTile extends StatelessWidget {

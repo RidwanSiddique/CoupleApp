@@ -9,6 +9,7 @@ import '../../features/auth/presentation/reset_password_screen.dart';
 import '../../features/auth/presentation/sign_in_screen.dart';
 import '../../features/auth/presentation/sign_up_screen.dart';
 import '../../features/care/presentation/care_screen.dart';
+import '../../features/chat/presentation/chat_screen.dart';
 import '../../features/cycle/presentation/cycle_screen.dart';
 import '../../features/daily/presentation/question_screen.dart';
 import '../../features/daily/presentation/verse_reader.dart';
@@ -165,6 +166,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'settings',
             builder: (_, _) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: 'chat',
+            builder: (_, _) => const ChatScreen(),
           ),
         ],
       ),
