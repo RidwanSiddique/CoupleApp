@@ -60,6 +60,12 @@ class ChatService {
   /// Decrypt one inbound envelope, apply it, acknowledge, and delete it.
   /// Never throws for a bad envelope — logs via return.
   Future<void> handleInboxRow(Map<String, dynamic> env) async {
+    // Only handle envelopes addressed to THIS device. A user's other devices
+    // share the same recipient_id and appear in this stream, but their
+    // envelopes are theirs to fetch — we must not read or delete them.
+    final recipientDeviceNum = (env['recipient_device_num'] as num?)?.toInt();
+    if (recipientDeviceNum != selfDeviceNum) return;
+
     final messageId = env['message_id'] as String;
     if (await store.messageExists(messageId) && env['id'] != null) {
       // Already processed this logical message; just clean up the envelope.

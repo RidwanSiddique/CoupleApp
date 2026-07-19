@@ -280,6 +280,7 @@ void main() {
       'message_id': 'msg-inbox-1',
       'sender_id': spouseUserId,
       'sender_device_num': 1,
+      'recipient_device_num': 1,
       'ciphertext': _hexEnvelope(toSelf1.ciphertext),
       'cipher_type': toSelf1.cipherType,
       'created_at': DateTime.utc(2026, 1, 3).toIso8601String(),
@@ -311,6 +312,7 @@ void main() {
       'message_id': 'msg-inbox-2',
       'sender_id': spouseUserId,
       'sender_device_num': 1,
+      'recipient_device_num': 1,
       'ciphertext': _hexEnvelope(toSelf1.ciphertext),
       'cipher_type': toSelf1.cipherType,
       'created_at': DateTime.utc(2026, 1, 3).toIso8601String(),
@@ -347,6 +349,7 @@ void main() {
       'message_id': 'msg-reaction-1',
       'sender_id': spouseUserId,
       'sender_device_num': 1,
+      'recipient_device_num': 1,
       'ciphertext': _hexEnvelope(toSelf1.ciphertext),
       'cipher_type': toSelf1.cipherType,
       'created_at': DateTime.utc(2026, 1, 3).toIso8601String(),
@@ -378,6 +381,7 @@ void main() {
       'message_id': 'msg-self-sync-1',
       'sender_id': selfUserId,
       'sender_device_num': 2,
+      'recipient_device_num': 1,
       'ciphertext': _hexEnvelope(toSelf1.ciphertext),
       'cipher_type': toSelf1.cipherType,
       'created_at': DateTime.utc(2026, 1, 3).toIso8601String(),
@@ -400,6 +404,7 @@ void main() {
       'message_id': 'msg-bad-1',
       'sender_id': spouseUserId,
       'sender_device_num': 1,
+      'recipient_device_num': 1,
       'ciphertext': _hexEnvelope(Uint8List.fromList(List.filled(40, 7))),
       'cipher_type': 3, // CiphertextMessage.prekeyType, but garbage bytes
       'created_at': DateTime.utc(2026, 1, 3).toIso8601String(),
@@ -437,5 +442,72 @@ void main() {
     expect(reaction.reactorId, selfUserId,
         reason: 'the sender reflects their own reaction locally immediately');
     expect(reaction.emoji, emoji);
+  });
+
+  test('ignores an envelope addressed to a DIFFERENT device (no delete, no decrypt)',
+      () async {
+    // This device (device 1) already processed the message for itself —
+    // 'm-other' exists locally. The same logical message also has an
+    // envelope row addressed to device 2 (a sibling device on this same
+    // account); watchInbox filters only by recipient_id, so device 1's
+    // stream still surfaces device 2's row. Without the device guard, the
+    // messageExists short-circuit below would delete it before device 2
+    // ever gets to fetch it.
+    await store.upsertMessage(
+      id: 'm-other',
+      senderId: spouseUserId,
+      body: 'hi from spouse',
+      createdAt: DateTime.utc(2026, 1, 3),
+      status: 'delivered',
+    );
+
+    final env = {
+      'id': 'env-for-d2',
+      'message_id': 'm-other',
+      'sender_id': spouseUserId,
+      'sender_device_num': 1,
+      'recipient_device_num': 2, // NOT ours (we are device 1)
+      'cipher_type': 3,
+      'ciphertext': 'deadbeef',
+      'created_at': DateTime(2026).toIso8601String(),
+    };
+
+    await chat.handleInboxRow(env); // chat.selfDeviceNum == 1
+
+    expect(repo.deleteEnvelopeCalls, isEmpty,
+        reason: 'must not delete a sibling device\'s envelope');
+    expect(await store.messageExists('m-other'), isTrue,
+        reason: 'the existing local copy for this device must be untouched');
+  });
+
+  test('processes an envelope addressed to OUR device', () async {
+    // A real spouse -> us TextPayload envelope with recipient_device_num
+    // equal to chat.selfDeviceNum: it must decrypt, store as delivered,
+    // send the delivered receipt, and be deleted, same as before the guard.
+    final copies = await spouse1.service.encryptFor(
+      recipientUserId: selfUserId,
+      plaintext: encodePayload(const TextPayload(body: 'hello device 1')),
+    );
+    final toSelf1 = copies.singleWhere((c) => c.userId == selfUserId && c.deviceNum == 1);
+
+    final envelope = <String, dynamic>{
+      'id': 'env-for-d1',
+      'message_id': 'msg-for-d1',
+      'sender_id': spouseUserId,
+      'sender_device_num': 1,
+      'recipient_device_num': 1, // ours (chat.selfDeviceNum == 1)
+      'ciphertext': _hexEnvelope(toSelf1.ciphertext),
+      'cipher_type': toSelf1.cipherType,
+      'created_at': DateTime.utc(2026, 1, 3).toIso8601String(),
+    };
+
+    await chat.handleInboxRow(envelope);
+
+    expect(await store.messageExists('msg-for-d1'), isTrue);
+    final rows = await store.watchConversation().first;
+    final row = rows.singleWhere((r) => r.id == 'msg-for-d1');
+    expect(row.status, 'delivered');
+    expect(repo.markDeliveredCalls, contains('msg-for-d1'));
+    expect(repo.deleteEnvelopeCalls, contains('env-for-d1'));
   });
 }
