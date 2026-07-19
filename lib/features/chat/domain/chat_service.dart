@@ -23,6 +23,13 @@ class ChatService {
   final String spouseUserId;
   final int selfDeviceNum;
 
+  /// Bounded retry for envelopes that fail to decrypt (e.g. corrupt
+  /// ciphertext, or a session we can never rebuild). Counted in-memory only:
+  /// a dead-letter delete persists, so a corrupt envelope survives at most
+  /// one session's worth of retries.
+  static const int maxDecryptAttempts = 8;
+  final Map<String, int> _decryptAttempts = {};
+
   Future<void> sendText(String body, {String? replyToMessageId}) async {
     final id = const Uuid().v4();
     final now = DateTime.now();
@@ -106,8 +113,19 @@ class ChatService {
         cipherType: (env['cipher_type'] as num).toInt(),
       );
       payload = decodePayload(Uint8List.fromList(plain));
+      _decryptAttempts.remove(env['id']);
     } catch (_) {
-      return; // leave fetched_at null; retried next tick
+      final id = env['id'] as String?;
+      if (id == null) return;
+      final n = (_decryptAttempts[id] ?? 0) + 1;
+      _decryptAttempts[id] = n;
+      if (n >= maxDecryptAttempts) {
+        // Unrecoverable (corrupt, or a session we can never rebuild). Dead-letter
+        // it so the inbox stream stops re-delivering it every tick.
+        _decryptAttempts.remove(id);
+        await repo.deleteEnvelope(id);
+      }
+      return; // otherwise leave it for the next tick
     }
 
     switch (payload) {

@@ -534,4 +534,26 @@ void main() {
     expect(repo.markDeliveredCalls, contains('msg-for-d1'));
     expect(repo.deleteEnvelopeCalls, contains('env-for-d1'));
   });
+
+  test('an undecryptable envelope is retried then dead-lettered, not looped forever', () async {
+    // env addressed to OUR device but with garbage ciphertext that never decrypts.
+    final env = {
+      'id': 'bad-env', 'message_id': 'm-bad',
+      'sender_id': spouseUserId, 'sender_device_num': 1,
+      'recipient_device_num': chat.selfDeviceNum,
+      'cipher_type': 2, 'ciphertext': 'deadbeef',
+      'created_at': DateTime(2026).toIso8601String(),
+    };
+    // Below the threshold: retried, NOT deleted.
+    for (var i = 0; i < ChatService.maxDecryptAttempts - 1; i++) {
+      await chat.handleInboxRow(env);
+    }
+    expect(repo.deleteEnvelopeCalls, isEmpty);
+    // The attempt that reaches the threshold dead-letters it.
+    await chat.handleInboxRow(env);
+    expect(repo.deleteEnvelopeCalls, contains('bad-env'));
+    // Further ticks do nothing (already dead-lettered / not re-added).
+    await chat.handleInboxRow(env);
+    expect(repo.deleteEnvelopeCalls.where((e) => e == 'bad-env').length, 1);
+  });
 }
