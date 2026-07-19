@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/env.dart';
+import '../../../core/crypto/crypto_providers.dart';
 import '../../../core/errors/failures.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/platform/haptics.dart';
@@ -116,7 +117,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         case OtpPurpose.signUp:
           await repo.verifySignupOtp(email: widget.email, token: code);
       }
-      await ref.read(signalBootstrapProvider).ensureBundle();
+      await ref.read(ensureRegisteredProvider)();
       unawaited(SakHaptics.medium());
     } on AppFailure catch (e) {
       _slots.shake();

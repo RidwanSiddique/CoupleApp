@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/env.dart';
+import '../../../core/crypto/crypto_providers.dart';
 import '../../../core/errors/failures.dart';
 import '../../../core/platform/haptics.dart';
 import '../../../core/theme/tokens.dart';
@@ -67,7 +68,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
       // Verifying the code returns a session; set the new password on it.
       await repo.verifyRecoveryOtp(email: widget.email, token: _code);
       await repo.updatePassword(_password.text);
-      await ref.read(signalBootstrapProvider).ensureBundle();
+      await ref.read(ensureRegisteredProvider)();
       unawaited(SakHaptics.medium());
       if (mounted) context.go('/home');
     } on AppFailure catch (e) {

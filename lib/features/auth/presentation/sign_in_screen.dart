@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/env.dart';
+import '../../../core/crypto/crypto_providers.dart';
 import '../../../core/errors/failures.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/platform/haptics.dart';
@@ -56,7 +57,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             email: email,
             password: password,
           );
-      await ref.read(signalBootstrapProvider).ensureBundle();
+      await ref.read(ensureRegisteredProvider)();
       unawaited(SakHaptics.medium());
     } on AppFailure catch (e) {
       if (mounted) setState(() => _error = e.message);
