@@ -1,8 +1,8 @@
 // lib/core/crypto/crypto_providers.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 
-import '../../features/auth/domain/auth_controller.dart' show keyVaultProvider;
+import '../../features/auth/domain/auth_controller.dart'
+    show authSessionProvider, keyVaultProvider;
 import '../../shared/providers/supabase_provider.dart';
 import '../storage/signal_db.dart';
 import 'prekey_bundle_source.dart';
@@ -24,41 +24,44 @@ final preKeyBundleSourceProvider = Provider<PreKeyBundleSource>((ref) {
   return SupabasePreKeyBundleSource(ref.read(supabaseClientProvider));
 });
 
-/// This device's own user id, read from the live Supabase session. A separate
-/// provider (rather than reading `supabaseClientProvider` inline wherever a
-/// user id is needed) so it can be overridden in tests without standing up a
-/// real `SupabaseClient`.
-final selfUserIdProvider = Provider<String>((ref) {
-  return ref.watch(supabaseClientProvider).auth.currentUser?.id ?? '';
-});
+/// Builds the crypto session service from PERSISTED / LIVE self-identity
+/// rather than an ephemeral cache:
+///  - `selfUserId` comes from [authSessionProvider], the live auth session,
+///    so it tracks sign-in/out instead of being read once and cached forever.
+///  - `selfDeviceNum` comes from `KeyVault.readDeviceNum()`, which is
+///    persisted in secure storage and survives restarts — a returning user
+///    who is already signed in gets their real device number without
+///    depending on [ensureRegisteredProvider] having run this session.
+///
+/// Resolves to `null` when there is no signed-in user, or when this device
+/// hasn't completed registration yet (`readDeviceNum()` is still null). A
+/// `null` service means "crypto not ready"; callers are expected to handle
+/// that rather than assume a service is always available.
+final signalSessionServiceProvider =
+    FutureProvider<SignalSessionService?>((ref) async {
+  final session = await ref.watch(authSessionProvider.future);
+  final selfUserId = session?.user.id;
+  if (selfUserId == null) return null;
 
-/// This device's assigned device_num. Zero until [ensureRegisteredProvider]
-/// has run at least once in this process; every real call site awaits that
-/// before touching [signalSessionServiceProvider], so the zero default is
-/// never observed in practice.
-final selfDeviceNumProvider = StateProvider<int>((ref) => 0);
+  final selfDeviceNum = await ref.read(keyVaultProvider).readDeviceNum();
+  if (selfDeviceNum == null) return null;
 
-final signalSessionServiceProvider = Provider<SignalSessionService>((ref) {
   return SignalSessionService(
     db: ref.watch(signalDbProvider),
     vault: ref.read(keyVaultProvider),
     bundles: ref.read(preKeyBundleSourceProvider),
-    selfUserId: ref.watch(selfUserIdProvider),
-    selfDeviceNum: ref.watch(selfDeviceNumProvider),
+    selfUserId: selfUserId,
+    selfDeviceNum: selfDeviceNum,
   );
 });
 
-/// Registers this device (idempotent) + tops up prekeys, and records the
-/// resulting device_num so [signalSessionServiceProvider] picks it up on the
-/// next rebuild. Call after auth.
+/// Registers this device (idempotent) + tops up prekeys. Call after auth.
 final ensureRegisteredProvider = Provider<Future<int> Function()>((ref) {
-  return () async {
-    final deviceNum = await ensureRegistered(
+  return () {
+    return ensureRegistered(
       db: ref.read(signalDbProvider),
       vault: ref.read(keyVaultProvider),
       registrar: ref.read(deviceRegistrarProvider),
     );
-    ref.read(selfDeviceNumProvider.notifier).state = deviceNum;
-    return deviceNum;
   };
 });
