@@ -137,4 +137,21 @@ class SignalDb extends _$SignalDb {
       await delete(signalMeta).go();
     });
   }
+
+  static const _ownerKey = '_owner_user_id';
+
+  /// The user id that currently owns this device's local data. Stored in the
+  /// DB (which is NOT wiped on sign-out) so an account SWITCH can be detected:
+  /// the same user signing back in keeps their data; a different user triggers
+  /// [wipeAll]. Null on a brand-new device.
+  Future<String?> readOwnerUserId() async {
+    final row = await (select(signalMeta)..where((t) => t.key.equals(_ownerKey)))
+        .getSingleOrNull();
+    return row?.value;
+  }
+
+  Future<void> setOwnerUserId(String userId) async {
+    await into(signalMeta).insertOnConflictUpdate(
+        SignalMetaCompanion.insert(key: _ownerKey, value: userId));
+  }
 }

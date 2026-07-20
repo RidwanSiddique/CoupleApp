@@ -13,10 +13,7 @@ final keyVaultProvider = Provider<KeyVault>((ref) {
 });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(
-    ref.read(supabaseClientProvider),
-    ref.read(keyVaultProvider),
-  );
+  return AuthRepository(ref.read(supabaseClientProvider));
 });
 
 /// Broadcasts the current [Session] (null when signed out).

@@ -255,33 +255,45 @@ void main() {
     expect(registrar.uploaded, isEmpty);
   });
 
-  test('fresh registration wipes stale local data (account switch)', () async {
+  test('guardAccountSwitch WIPES when a different user signs in', () async {
     final db = SignalDb.memory();
-    final vault = KeyVault(InMemorySecureStore()); // no identity yet
+    final vault = KeyVault(InMemorySecureStore());
     final store = ChatStore(db);
-    // The PREVIOUS account's chat history, left in the device-global DB.
-    await store.upsertMessage(id: 'old', senderId: 'prev-spouse', body: 'secret',
+    // Account A owns the device and has chat history.
+    await guardAccountSwitch(db: db, vault: vault, selfUserId: 'user-A');
+    await store.upsertMessage(id: 'old', senderId: 'A-spouse', body: 'secret',
         createdAt: DateTime(2026), status: 'delivered');
+    await vault.savePrivate(
+        generateBundle(deviceId: 'd', oneTimePrekeyCount: 1).private);
 
-    await ensureRegistered(db: db, vault: vault, registrar: _FakeRegistrar());
+    // A DIFFERENT user signs in on the same device.
+    await guardAccountSwitch(db: db, vault: vault, selfUserId: 'user-B');
 
-    // A new identity means a new account — it must not inherit old messages.
     expect(await store.watchConversation().first, isEmpty,
-        reason: 'account switch must not leak the previous user\'s chat');
+        reason: 'a different account must not see the previous user\'s chat');
+    expect(await vault.hasIdentity(), isFalse,
+        reason: 'the previous identity must be wiped too');
+    expect(await db.readOwnerUserId(), 'user-B');
   });
 
-  test('steady-state re-registration preserves the same user\'s history',
+  test('guardAccountSwitch PRESERVES history when the same user re-logs in',
       () async {
     final db = SignalDb.memory();
     final vault = KeyVault(InMemorySecureStore());
     final store = ChatStore(db);
-    await ensureRegistered(db: db, vault: vault, registrar: _FakeRegistrar());
-    await store.upsertMessage(id: 'mine', senderId: 'my-spouse', body: 'hi',
+    await guardAccountSwitch(db: db, vault: vault, selfUserId: 'user-A');
+    await store.upsertMessage(id: 'mine', senderId: 'A-spouse', body: 'hi',
         createdAt: DateTime(2026), status: 'delivered');
-    // Relaunch: same identity present -> steady state, must NOT wipe.
-    await ensureRegistered(db: db, vault: vault, registrar: _FakeRegistrar());
+    await vault.savePrivate(
+        generateBundle(deviceId: 'd', oneTimePrekeyCount: 1).private);
 
-    expect((await store.watchConversation().first).length, 1);
+    // Same user signs out and back in — sign-out no longer wipes anything.
+    await guardAccountSwitch(db: db, vault: vault, selfUserId: 'user-A');
+
+    expect((await store.watchConversation().first).length, 1,
+        reason: 'the same user keeps their chat history across re-login');
+    expect(await vault.hasIdentity(), isTrue,
+        reason: 'the same user keeps their identity/device');
   });
 }
 

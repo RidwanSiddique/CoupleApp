@@ -1,13 +1,11 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/crypto/key_vault.dart';
 import '../../../core/errors/failures.dart';
 
 class AuthRepository {
-  AuthRepository(this._client, this._vault);
+  AuthRepository(this._client);
 
   final SupabaseClient _client;
-  final KeyVault _vault;
 
   Session? get currentSession => _client.auth.currentSession;
   User? get currentUser => _client.auth.currentUser;
@@ -133,9 +131,10 @@ class AuthRepository {
   }
 
   Future<void> signOut() async {
+    // Only clear the auth session. The Signal identity + local data are NOT
+    // wiped here so the SAME user signing back in keeps their history and
+    // device registration; a DIFFERENT user is detected and wiped by the
+    // account-switch guard in ensureRegisteredProvider.
     await _client.auth.signOut();
-    // Wipe Signal privates: a different user may sign in on this device,
-    // and the plan calls for a per-user identity.
-    await _vault.wipe();
   }
 }

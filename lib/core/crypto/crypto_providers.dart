@@ -43,17 +43,23 @@ final signalSessionServiceProvider =
   final selfUserId = session?.user.id;
   if (selfUserId == null) return null;
 
+  final db = ref.read(signalDbProvider);
   final vault = ref.read(keyVaultProvider);
+
+  // Account-switch guard: also runs at sign-in via ensureRegisteredProvider
+  // (before navigation), but enforced here too so a restored/rebuilt session
+  // can never build a service over another user's local data.
+  await guardAccountSwitch(db: db, vault: vault, selfUserId: selfUserId);
+
   // If this device isn't registered yet, register it now. That happens for a
-  // session restored on launch (which never passes through the sign-in screen
-  // where ensureRegistered runs) or if that first registration failed.
+  // session restored on launch or if the first registration failed.
   // ensureRegistered is idempotent and returns this device's number, so the
   // crypto layer self-heals instead of leaving chat stuck on "setting up secure
   // chat" forever. If it throws (network/RPC), the error propagates so callers
   // can surface it rather than silently masking it as "not ready".
   final selfDeviceNum = await vault.readDeviceNum() ??
       await ensureRegistered(
-        db: ref.read(signalDbProvider),
+        db: db,
         vault: vault,
         registrar: ref.read(deviceRegistrarProvider),
       );
@@ -67,23 +73,35 @@ final signalSessionServiceProvider =
   );
 });
 
-/// Full sign-out: wipe the device-local chat history + Signal state, THEN sign
-/// out. Clearing here (not only on the next account's registration) means the
-/// previous user's messages disappear the moment they sign out. Use this
-/// instead of `authRepository.signOut()` directly at UI sign-out points.
+/// Sign out. Does NOT wipe the device-local data: the SAME user signing back
+/// in must keep their chat history and Signal identity/device. A DIFFERENT
+/// user signing in is detected and wiped by [ensureRegisteredProvider]'s
+/// account-switch guard, so this only needs to clear the auth session.
 final signOutProvider = Provider<Future<void> Function()>((ref) {
-  return () async {
-    await ref.read(signalDbProvider).wipeAll();
-    await ref.read(authRepositoryProvider).signOut();
-  };
+  return () => ref.read(authRepositoryProvider).signOut();
 });
 
 /// Registers this device (idempotent) + tops up prekeys. Call after auth.
+///
+/// Runs the account-switch guard first: the local DB (chat history + Signal
+/// state) is device-global and survives sign-out, so if it belongs to a
+/// DIFFERENT user than the one now signed in, wipe it (and the identity)
+/// before registering — otherwise the new user would see the previous user's
+/// messages and reuse their sessions. The SAME user re-logging keeps
+/// everything (steady-state path in ensureRegistered).
 final ensureRegisteredProvider = Provider<Future<int> Function()>((ref) {
-  return () {
+  return () async {
+    final db = ref.read(signalDbProvider);
+    final vault = ref.read(keyVaultProvider);
+    final selfUserId = ref.read(authRepositoryProvider).currentUser?.id;
+
+    if (selfUserId != null) {
+      await guardAccountSwitch(db: db, vault: vault, selfUserId: selfUserId);
+    }
+
     return ensureRegistered(
-      db: ref.read(signalDbProvider),
-      vault: ref.read(keyVaultProvider),
+      db: db,
+      vault: vault,
       registrar: ref.read(deviceRegistrarProvider),
     );
   };
