@@ -53,7 +53,16 @@ class SignalSessionService {
 
     // Roster lookups consume nothing; only a real handshake consumes a prekey.
     if (recipientUserId != _selfUserId) {
-      for (final n in await _bundles.deviceNumsFor(recipientUserId)) {
+      final recipientDevices = await _bundles.deviceNumsFor(recipientUserId);
+      if (recipientDevices.isEmpty) {
+        // The recipient has no registered device yet. Encrypting to nobody
+        // would produce zero copies and a message the recipient can never
+        // receive; fail loudly so the caller marks it failed (retryable)
+        // rather than showing a false "sent".
+        throw UnknownFailure(
+            'Recipient $recipientUserId has no registered device yet');
+      }
+      for (final n in recipientDevices) {
         targets.add((userId: recipientUserId, deviceNum: n));
       }
     }

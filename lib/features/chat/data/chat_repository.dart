@@ -37,11 +37,23 @@ class ChatRepository {
   }
 
   Stream<List<Map<String, dynamic>>> watchInbox(String userId) {
+    // Realtime only signals that envelopes changed; re-fetch the rows over
+    // REST so `ciphertext` bytea is the reliable Postgres `\x`-hex form the
+    // decoder expects. Supabase Realtime's bytea encoding isn't guaranteed to
+    // match, and a mis-decoded ciphertext fails silently (it gets
+    // dead-lettered), so we never decrypt from the realtime payload's bytea.
+    // The re-fetch also means already-deleted envelopes never reappear.
     return _client
         .from('message_envelopes')
         .stream(primaryKey: ['id'])
         .eq('recipient_id', userId)
-        .map((rows) => [for (final r in rows) Map<String, dynamic>.from(r)]);
+        .asyncMap((_) async {
+      final rows = await _client
+          .from('message_envelopes')
+          .select()
+          .eq('recipient_id', userId);
+      return [for (final r in rows) Map<String, dynamic>.from(r as Map)];
+    });
   }
 
   Stream<List<Map<String, dynamic>>> watchMyMessages(String coupleId) {

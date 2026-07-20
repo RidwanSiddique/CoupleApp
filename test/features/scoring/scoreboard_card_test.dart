@@ -10,7 +10,6 @@ void main() {
     const board = CoupleScoreboard(
       own: ScoreResult(prayed: 95, due: 100, currentStreak: 7, longestStreak: 9),
       spouse: ScoreResult(prayed: 90, due: 100, currentStreak: 4, longestStreak: 6),
-      spouseCycleShared: false,
     );
     await tester.pumpWidget(ProviderScope(
       overrides: [

@@ -30,6 +30,12 @@ class ChatService {
   static const int maxDecryptAttempts = 8;
   final Map<String, int> _decryptAttempts = {};
 
+  /// Envelope ids already successfully processed this session. The text-message
+  /// `messageExists` dedup doesn't cover reactions (they create no
+  /// chat_messages row), so without this a re-delivered reaction envelope would
+  /// re-decrypt a spent ratchet and fail. Applies to every envelope type.
+  final Set<String> _processedEnvelopes = {};
+
   Future<void> sendText(String body, {String? replyToMessageId}) async {
     final id = const Uuid().v4();
     final now = DateTime.now();
@@ -72,16 +78,25 @@ class ChatService {
     required String emoji,
     required bool add,
   }) async {
-    final payload = ReactionPayload(
-        targetMessageId: targetMessageId, emoji: emoji, add: add);
-    final copies = await session.encryptFor(
-      recipientUserId: spouseUserId,
-      plaintext: encodePayload(payload),
-    );
-    await repo.sendEnvelopes(senderDeviceNum: selfDeviceNum, copies: copies);
-    // Reflect our own reaction locally immediately.
-    await store.applyReaction(
-        messageId: targetMessageId, reactorId: selfUserId, emoji: emoji, add: add);
+    try {
+      final payload = ReactionPayload(
+          targetMessageId: targetMessageId, emoji: emoji, add: add);
+      final copies = await session.encryptFor(
+        recipientUserId: spouseUserId,
+        plaintext: encodePayload(payload),
+      );
+      await repo.sendEnvelopes(senderDeviceNum: selfDeviceNum, copies: copies);
+      // Reflect our own reaction locally only once it's actually been sent.
+      await store.applyReaction(
+          messageId: targetMessageId,
+          reactorId: selfUserId,
+          emoji: emoji,
+          add: add);
+    } catch (_) {
+      // Reaction couldn't be sent (e.g. spouse not yet registered, offline).
+      // A reaction is best-effort; don't crash the caller or leave an
+      // unhandled async error.
+    }
   }
 
   /// Mark every unread incoming message read: locally (clears the unread badge)
@@ -123,10 +138,19 @@ class ChatService {
     final recipientDeviceNum = (env['recipient_device_num'] as num?)?.toInt();
     if (recipientDeviceNum != selfDeviceNum) return;
 
+    final envId = env['id'] as String?;
+    // Dedup EVERY envelope type (text, reaction, …): re-decrypting a spent
+    // ratchet fails, and reactions have no chat_messages row to gate on.
+    if (envId != null && _processedEnvelopes.contains(envId)) {
+      await repo.deleteEnvelope(envId);
+      return;
+    }
+
     final messageId = env['message_id'] as String;
-    if (await store.messageExists(messageId) && env['id'] != null) {
+    if (await store.messageExists(messageId) && envId != null) {
       // Already processed this logical message; just clean up the envelope.
-      await repo.deleteEnvelope(env['id'] as String);
+      _processedEnvelopes.add(envId);
+      await repo.deleteEnvelope(envId);
       return;
     }
     // Sender address comes from the envelope itself (denormalized): it may be
@@ -180,6 +204,7 @@ class ChatService {
       case UnsupportedPayload():
         break; // skip, still delete the envelope below
     }
+    if (envId != null) _processedEnvelopes.add(envId);
     await repo.deleteEnvelope(env['id'] as String);
   }
 }

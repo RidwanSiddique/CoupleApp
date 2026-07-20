@@ -626,6 +626,63 @@ void main() {
     await chat.markConversationRead();
     expect(repo.markReadCalls.length, 2);
   });
+
+  test('sendText marks the message failed when encryptFor throws (no recipient device)',
+      () async {
+    final db = SignalDb.memory();
+    addTearDown(db.close);
+    final store = ChatStore(db);
+    final svc = ChatService(
+      session: _ThrowingSession(),
+      repo: _FakeChatRepo(),
+      store: store,
+      selfUserId: selfUserId,
+      spouseUserId: spouseUserId,
+      selfDeviceNum: 1,
+    );
+
+    await svc.sendText('hi');
+
+    final row = (await store.watchConversation().first).single;
+    expect(row.body, 'hi', reason: 'the text must not be silently lost');
+    expect(row.status, 'failed',
+        reason: 'a message that could not be encrypted/sent is failed, not sent');
+  });
+
+  test('a re-delivered reaction envelope is deduped, not re-decrypted',
+      () async {
+    final db = SignalDb.memory();
+    addTearDown(db.close);
+    final store = ChatStore(db);
+    final session = _ReactionSession();
+    final repo = _FakeChatRepo();
+    final svc = ChatService(
+      session: session,
+      repo: repo,
+      store: store,
+      selfUserId: selfUserId,
+      spouseUserId: spouseUserId,
+      selfDeviceNum: 1,
+    );
+    final env = {
+      'id': 'env-r',
+      'message_id': 'rmsg',
+      'sender_id': spouseUserId,
+      'sender_device_num': 1,
+      'recipient_device_num': 1,
+      'cipher_type': 2,
+      'ciphertext': 'aa',
+      'created_at': DateTime.utc(2026).toIso8601String(),
+    };
+
+    await svc.handleInboxRow(env);
+    await svc.handleInboxRow(env); // duplicate realtime delivery
+
+    expect(session.decryptCalls, 1,
+        reason: 'a processed reaction envelope must not be decrypted again '
+            '(a spent ratchet would fail)');
+    expect((await store.reactionsFor('m1')).length, 1);
+  });
 }
 
 /// A stand-in SignalSessionService that records how many `decryptFrom` calls
@@ -646,6 +703,50 @@ class _SpySession implements SignalSessionService {
     await Future<void>.delayed(const Duration(milliseconds: 5));
     _active--;
     return Uint8List.fromList(encodePayload(const TextPayload(body: 'hi')));
+  }
+
+  @override
+  Future<List<EncryptedCopy>> encryptFor({
+    required String recipientUserId,
+    required Uint8List plaintext,
+  }) =>
+      throw UnimplementedError();
+}
+
+/// encryptFor always throws — simulates a recipient with no registered device.
+class _ThrowingSession implements SignalSessionService {
+  @override
+  Future<List<EncryptedCopy>> encryptFor({
+    required String recipientUserId,
+    required Uint8List plaintext,
+  }) async =>
+      throw Exception('recipient has no registered device');
+
+  @override
+  Future<Uint8List> decryptFrom({
+    required String senderUserId,
+    required int senderDeviceNum,
+    required Uint8List ciphertext,
+    required int cipherType,
+  }) =>
+      throw UnimplementedError();
+}
+
+/// decryptFrom returns a reaction payload and counts calls, so a test can
+/// assert a duplicate envelope isn't decrypted twice.
+class _ReactionSession implements SignalSessionService {
+  int decryptCalls = 0;
+
+  @override
+  Future<Uint8List> decryptFrom({
+    required String senderUserId,
+    required int senderDeviceNum,
+    required Uint8List ciphertext,
+    required int cipherType,
+  }) async {
+    decryptCalls++;
+    return Uint8List.fromList(encodePayload(
+        const ReactionPayload(targetMessageId: 'm1', emoji: '❤️', add: true)));
   }
 
   @override

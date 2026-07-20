@@ -12,17 +12,9 @@ final scoreboardRepositoryProvider = Provider<ScoreboardRepository>((ref) {
 });
 
 class CoupleScoreboard {
-  const CoupleScoreboard({
-    required this.own,
-    required this.spouse,
-    required this.spouseCycleShared,
-  });
+  const CoupleScoreboard({required this.own, required this.spouse});
   final ScoreResult own;
   final ScoreResult spouse;
-  // Vestigial now that scores are computed server-side (RPC never exposes
-  // the spouse's private cycle rows regardless of sharing), kept only for
-  // source compatibility with call sites that still reference it.
-  final bool spouseCycleShared;
 }
 
 /// Window length in days for the headline comparison.
@@ -47,8 +39,14 @@ final scoreboardProvider = FutureProvider<CoupleScoreboard?>((ref) async {
   final myId = session.user.id;
   final spouseId = couple.spouseOf(myId);
 
-  final rows = await client
-      .rpc('get_couple_scoreboard', params: {'p_window_days': scoreWindowDays});
+  // Pass the client's LOCAL today so the window matches the local dates that
+  // prayer_logs.date rows are written with (the DB's current_date is UTC).
+  final now = DateTime.now();
+  final localToday =
+      '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+  final rows = await client.rpc('get_couple_scoreboard',
+      params: {'p_window_days': scoreWindowDays, 'p_today': localToday});
 
   ScoreResult? own;
   ScoreResult? spouse;
@@ -68,5 +66,5 @@ final scoreboardProvider = FutureProvider<CoupleScoreboard?>((ref) async {
   }
   if (own == null || spouse == null) return null;
 
-  return CoupleScoreboard(own: own, spouse: spouse, spouseCycleShared: false);
+  return CoupleScoreboard(own: own, spouse: spouse);
 });
