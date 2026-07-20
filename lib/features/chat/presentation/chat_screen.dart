@@ -38,6 +38,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // update on this device; no-op until chatServiceProvider resolves.
     ref.watch(receiptPumpProvider);
 
+    // Mark incoming messages read whenever the conversation changes while this
+    // screen is open — i.e. on open and on each new message. Clears the unread
+    // badge and sends the "read" receipt to the spouse. No-op when nothing is
+    // unread or the service isn't ready.
+    ref.listen(conversationMessagesProvider, (_, next) {
+      if (next.hasValue) {
+        ref.read(chatServiceProvider).asData?.value?.markConversationRead();
+      }
+    });
+
     final theme = Theme.of(context);
     final myId = ref.watch(authSessionProvider).asData?.value?.user.id;
     final messagesAsync = ref.watch(conversationMessagesProvider);

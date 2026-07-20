@@ -162,6 +162,7 @@ class _FakeChatRepo extends ChatRepository {
   final List<({int senderDeviceNum, List<EncryptedCopy> copies, String? messageId})>
       sendEnvelopesCalls = [];
   final List<String> markDeliveredCalls = [];
+  final List<String> markReadCalls = [];
   final List<String> deleteEnvelopeCalls = [];
 
   String nextMessageId = 'm-1';
@@ -189,6 +190,11 @@ class _FakeChatRepo extends ChatRepository {
   @override
   Future<void> markDelivered(String messageId) async {
     markDeliveredCalls.add(messageId);
+  }
+
+  @override
+  Future<void> markRead(String messageId) async {
+    markReadCalls.add(messageId);
   }
 
   @override
@@ -599,6 +605,26 @@ void main() {
             'concurrency-safe)');
     final rows = await store.watchConversation().first;
     expect(rows.length, 3); // all three still processed + stored
+  });
+
+  test('markConversationRead reads incoming unread locally + on the server',
+      () async {
+    await store.upsertMessage(id: 'in1', senderId: spouseUserId, body: 'a',
+        createdAt: DateTime(2026, 1, 1), status: 'delivered');
+    await store.upsertMessage(id: 'in2', senderId: spouseUserId, body: 'b',
+        createdAt: DateTime(2026, 1, 2), status: 'delivered');
+    // Own sent message — must NOT be marked read on the server.
+    await store.upsertMessage(id: 'out1', senderId: selfUserId, body: 'c',
+        createdAt: DateTime(2026, 1, 3), status: 'sent');
+
+    await chat.markConversationRead();
+
+    expect(await store.watchUnreadCount(selfUserId).first, 0);
+    expect(repo.markReadCalls.toSet(), {'in1', 'in2'});
+
+    // Idempotent: nothing left unread, so no further server calls.
+    await chat.markConversationRead();
+    expect(repo.markReadCalls.length, 2);
   });
 }
 

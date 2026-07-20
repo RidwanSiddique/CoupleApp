@@ -50,6 +50,14 @@ final conversationMessagesProvider =
   return ref.watch(chatStoreProvider).watchConversation();
 });
 
+/// Live count of unread incoming messages, for the home chat badge. Emits 0
+/// when signed out.
+final unreadChatCountProvider = StreamProvider<int>((ref) {
+  final authSession = ref.watch(authSessionProvider).asData?.value;
+  if (authSession == null) return Stream.value(0);
+  return ref.watch(chatStoreProvider).watchUnreadCount(authSession.user.id);
+});
+
 /// Subscribes to the inbox stream and feeds each row through
 /// [ChatService.handleInboxRow]. No-op until `chatServiceProvider` resolves
 /// to a real service; cancels its subscription on dispose.

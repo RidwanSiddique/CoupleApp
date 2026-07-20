@@ -7,6 +7,7 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/theme/typography.dart';
 import '../../../core/time/prayer_engine.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../chat/domain/chat_providers.dart';
 import '../../daily/presentation/question_card.dart';
 import '../../daily/presentation/verse_card.dart';
 import '../../duas/presentation/dua_card.dart';
@@ -54,6 +55,7 @@ class HomeScreen extends ConsumerWidget {
     return SakScaffold(
       padded: false,
       showAppBar: false,
+      floatingActionButton: const _ChatFab(),
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -147,8 +149,6 @@ class HomeScreen extends ConsumerWidget {
                       const PrayerLogCard(),
                       const SizedBox(height: SakSpace.md),
                       const ScoreboardCard(),
-                      const SizedBox(height: SakSpace.md),
-                      const _ChatTile(),
                       const SizedBox(height: SakSpace.md),
                       if (isWife) ...[
                         const _CycleTile(),
@@ -424,52 +424,24 @@ class _NextPrayerCard extends StatelessWidget {
       };
 }
 
-class _ChatTile extends StatelessWidget {
-  const _ChatTile();
+/// Messenger-style floating chat button with a live unread-message badge.
+class _ChatFab extends ConsumerWidget {
+  const _ChatFab();
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return SakCard(
-      variant: SakCardVariant.tonal,
-      onTap: () => context.go('/home/chat'),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: scheme.surface,
-              borderRadius: BorderRadius.circular(SakRadius.md),
-            ),
-            child: Icon(
-              Icons.chat_bubble_outline,
-              size: 20,
-              color: scheme.primary,
-            ),
-          ),
-          const SizedBox(width: SakSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Chat', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 2),
-                Text(
-                  'Your private, end-to-end encrypted space.',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          Icon(
-            Icons.chevron_right,
-            color: scheme.onSurface.withValues(alpha: 0.4),
-          ),
-        ],
-      ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(unreadChatCountProvider).asData?.value ?? 0;
+    final fab = FloatingActionButton(
+      heroTag: 'chat-fab',
+      tooltip: 'Chat',
+      onPressed: () => context.go('/home/chat'),
+      child: const Icon(Icons.chat_bubble_rounded),
+    );
+    if (count <= 0) return fab;
+    return Badge(
+      label: Text(count > 99 ? '99+' : '$count'),
+      offset: const Offset(-6, 6),
+      child: fab,
     );
   }
 }

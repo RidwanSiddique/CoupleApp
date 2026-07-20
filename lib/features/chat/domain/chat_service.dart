@@ -84,6 +84,22 @@ class ChatService {
         messageId: targetMessageId, reactorId: selfUserId, emoji: emoji, add: add);
   }
 
+  /// Mark every unread incoming message read: locally (clears the unread badge)
+  /// and on the server (so the spouse's sent messages flip to "read"). Server
+  /// calls are best-effort — a failure doesn't block the local badge clearing.
+  Future<void> markConversationRead() async {
+    final ids = await store.incomingUnreadIds(selfUserId);
+    if (ids.isEmpty) return;
+    await store.markIncomingRead(selfUserId);
+    for (final id in ids) {
+      try {
+        await repo.markRead(id);
+      } catch (_) {
+        // best-effort; retried next time the chat is opened
+      }
+    }
+  }
+
   Future<void> _inboxLock = Future<void>.value();
 
   /// Decrypt one inbound envelope, apply it, acknowledge, and delete it.

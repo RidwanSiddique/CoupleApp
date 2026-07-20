@@ -50,4 +50,28 @@ void main() {
     await store.applyReceipt(id: 'ghost', deliveredAt: DateTime(2026));
     expect(await store.messageExists('ghost'), isFalse);
   });
+
+  test('watchUnreadCount counts only incoming unread; markIncomingRead clears',
+      () async {
+    const me = 'me';
+    // Incoming (from spouse), unread.
+    await store.upsertMessage(id: 'in1', senderId: 'spouse', body: 'a',
+        createdAt: DateTime(2026, 1, 1), status: 'delivered');
+    await store.upsertMessage(id: 'in2', senderId: 'spouse', body: 'b',
+        createdAt: DateTime(2026, 1, 2), status: 'delivered');
+    // Own sent message — must NOT count.
+    await store.upsertMessage(id: 'out1', senderId: me, body: 'c',
+        createdAt: DateTime(2026, 1, 3), status: 'sent');
+    // Incoming but already read — must NOT count.
+    await store.upsertMessage(id: 'in3', senderId: 'spouse', body: 'd',
+        createdAt: DateTime(2026, 1, 4), status: 'read',
+        readAt: DateTime(2026, 1, 4));
+
+    expect(await store.watchUnreadCount(me).first, 2);
+    expect((await store.incomingUnreadIds(me)).toSet(), {'in1', 'in2'});
+
+    await store.markIncomingRead(me);
+    expect(await store.watchUnreadCount(me).first, 0);
+    expect(await store.incomingUnreadIds(me), isEmpty);
+  });
 }

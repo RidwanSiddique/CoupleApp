@@ -96,4 +96,32 @@ class ChatStore {
           ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
         .watch();
   }
+
+  /// Live count of incoming messages (from the spouse) not yet read.
+  Stream<int> watchUnreadCount(String selfUserId) {
+    final count = _db.chatMessages.id.count();
+    final q = _db.selectOnly(_db.chatMessages)
+      ..addColumns([count])
+      ..where(_db.chatMessages.senderId.isNotValue(selfUserId) &
+          _db.chatMessages.readAt.isNull());
+    return q.map((row) => row.read(count) ?? 0).watchSingle();
+  }
+
+  /// Ids of incoming (spouse-authored) messages not yet read — used to send
+  /// per-message read receipts to the server.
+  Future<List<String>> incomingUnreadIds(String selfUserId) async {
+    final rows = await (_db.select(_db.chatMessages)
+          ..where((t) =>
+              t.senderId.isNotValue(selfUserId) & t.readAt.isNull()))
+        .get();
+    return [for (final r in rows) r.id];
+  }
+
+  /// Locally mark every unread incoming message read (clears the unread count).
+  Future<void> markIncomingRead(String selfUserId) async {
+    await (_db.update(_db.chatMessages)
+          ..where((t) =>
+              t.senderId.isNotValue(selfUserId) & t.readAt.isNull()))
+        .write(ChatMessagesCompanion(readAt: Value(DateTime.now())));
+  }
 }
