@@ -1,6 +1,7 @@
 // lib/features/settings/presentation/settings_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/crypto/crypto_providers.dart';
 import '../../auth/domain/auth_controller.dart';
 import '../../cycle/domain/cycle_providers.dart';
 import '../../home/domain/home_providers.dart';
@@ -92,7 +93,7 @@ class SettingsScreen extends ConsumerWidget {
         ListTile(
           leading: const Icon(Icons.logout),
           title: const Text('Sign out'),
-          onTap: () => ref.read(authRepositoryProvider).signOut(),
+          onTap: () => ref.read(signOutProvider)(),
         ),
       ]),
     );

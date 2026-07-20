@@ -136,6 +136,16 @@ Future<int> ensureRegistered({
     return existingNum;
   }
 
+  if (!hasIdentity) {
+    // A brand-new identity means a fresh device OR a DIFFERENT account signing
+    // in on this device (sign-out wiped the vault). The local DB is
+    // device-global and not scoped per user, so any chat history / Signal
+    // sessions still in it belong to the PREVIOUS account — clear them before
+    // registering, or the new user would see the old user's messages and reuse
+    // their sessions. Must run before KeyCounters so ids start fresh.
+    await db.wipeAll();
+  }
+
   var deviceId = await vault.deviceId();
   deviceId ??= const Uuid().v4();
   await vault.saveDeviceId(deviceId);

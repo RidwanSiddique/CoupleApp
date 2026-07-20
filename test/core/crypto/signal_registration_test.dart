@@ -7,6 +7,7 @@ import 'package:sakinah/core/crypto/signal_keys.dart';
 import 'package:sakinah/core/crypto/signal_registration.dart';
 import 'package:sakinah/core/crypto/stores/drift_signal_store.dart';
 import 'package:sakinah/core/storage/signal_db.dart';
+import 'package:sakinah/features/chat/data/chat_store.dart';
 
 class _FakeRegistrar implements DeviceRegistrar {
   int? registeredDeviceNum;
@@ -252,6 +253,35 @@ void main() {
         db: db, vault: vault, registrar: registrar, threshold: 10, topUpTo: 20);
 
     expect(registrar.uploaded, isEmpty);
+  });
+
+  test('fresh registration wipes stale local data (account switch)', () async {
+    final db = SignalDb.memory();
+    final vault = KeyVault(InMemorySecureStore()); // no identity yet
+    final store = ChatStore(db);
+    // The PREVIOUS account's chat history, left in the device-global DB.
+    await store.upsertMessage(id: 'old', senderId: 'prev-spouse', body: 'secret',
+        createdAt: DateTime(2026), status: 'delivered');
+
+    await ensureRegistered(db: db, vault: vault, registrar: _FakeRegistrar());
+
+    // A new identity means a new account — it must not inherit old messages.
+    expect(await store.watchConversation().first, isEmpty,
+        reason: 'account switch must not leak the previous user\'s chat');
+  });
+
+  test('steady-state re-registration preserves the same user\'s history',
+      () async {
+    final db = SignalDb.memory();
+    final vault = KeyVault(InMemorySecureStore());
+    final store = ChatStore(db);
+    await ensureRegistered(db: db, vault: vault, registrar: _FakeRegistrar());
+    await store.upsertMessage(id: 'mine', senderId: 'my-spouse', body: 'hi',
+        createdAt: DateTime(2026), status: 'delivered');
+    // Relaunch: same identity present -> steady state, must NOT wipe.
+    await ensureRegistered(db: db, vault: vault, registrar: _FakeRegistrar());
+
+    expect((await store.watchConversation().first).length, 1);
   });
 }
 

@@ -2,7 +2,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/domain/auth_controller.dart'
-    show authSessionProvider, keyVaultProvider;
+    show authSessionProvider, authRepositoryProvider, keyVaultProvider;
 import '../../shared/providers/supabase_provider.dart';
 import '../storage/signal_db.dart';
 import 'prekey_bundle_source.dart';
@@ -65,6 +65,17 @@ final signalSessionServiceProvider =
     selfUserId: selfUserId,
     selfDeviceNum: selfDeviceNum,
   );
+});
+
+/// Full sign-out: wipe the device-local chat history + Signal state, THEN sign
+/// out. Clearing here (not only on the next account's registration) means the
+/// previous user's messages disappear the moment they sign out. Use this
+/// instead of `authRepository.signOut()` directly at UI sign-out points.
+final signOutProvider = Provider<Future<void> Function()>((ref) {
+  return () async {
+    await ref.read(signalDbProvider).wipeAll();
+    await ref.read(authRepositoryProvider).signOut();
+  };
 });
 
 /// Registers this device (idempotent) + tops up prekeys. Call after auth.

@@ -119,4 +119,22 @@ class SignalDb extends _$SignalDb {
           }
         },
       );
+
+  /// Delete ALL local data — chat history and Signal session/identity/key
+  /// state. Called when a different account registers on this device (and on
+  /// sign-out) so one user never sees another's messages or reuses their
+  /// Signal sessions. This DB is device-global and not scoped per user, so it
+  /// must be cleared on an account switch.
+  Future<void> wipeAll() async {
+    await transaction(() async {
+      await delete(chatMessages).go();
+      await delete(chatReactions).go();
+      await delete(signalSessions).go();
+      await delete(signalPrekeys).go();
+      await delete(signalSignedPrekeys).go();
+      await delete(signalIdentities).go();
+      await delete(signalIdentityChanges).go();
+      await delete(signalMeta).go();
+    });
+  }
 }

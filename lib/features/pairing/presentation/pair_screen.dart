@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/crypto/crypto_providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../auth/domain/auth_controller.dart';
@@ -48,7 +49,7 @@ class _PairScreenState extends ConsumerState<PairScreen>
           icon: const Icon(Icons.more_horiz),
           onSelected: (v) {
             if (v == 'logout') {
-              ref.read(authRepositoryProvider).signOut();
+              ref.read(signOutProvider)();
             }
           },
           itemBuilder: (_) => [
