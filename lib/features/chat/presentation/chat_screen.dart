@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/crypto/crypto_providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../auth/domain/auth_controller.dart';
@@ -40,8 +41,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final theme = Theme.of(context);
     final myId = ref.watch(authSessionProvider).asData?.value?.user.id;
     final messagesAsync = ref.watch(conversationMessagesProvider);
-    final chatService = ref.watch(chatServiceProvider).asData?.value;
+    final chatServiceAsync = ref.watch(chatServiceProvider);
+    final chatService = chatServiceAsync.asData?.value;
     final ready = chatService != null;
+    final setupError = chatServiceAsync.hasError;
     final typingChannel = ref.watch(typingChannelProvider);
     final spouseTyping = ref.watch(spouseTypingProvider).asData?.value ?? false;
 
@@ -121,12 +124,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 horizontal: SakSpace.lg,
                 vertical: SakSpace.xs,
               ),
-              child: Text(
-                'Setting up secure chat…',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                ),
-              ),
+              child: setupError
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "Couldn't set up secure chat. Check your "
+                            'connection and try again.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => ref
+                              .invalidate(signalSessionServiceProvider),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      'Setting up secure chat…',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
             ),
           if (spouseTyping)
             Padding(

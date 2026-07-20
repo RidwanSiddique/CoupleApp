@@ -1,4 +1,6 @@
 // test/core/crypto/crypto_providers_test.dart
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -7,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sakinah/core/crypto/crypto_providers.dart';
 import 'package:sakinah/core/crypto/key_vault.dart';
 import 'package:sakinah/core/crypto/prekey_bundle_source.dart';
+import 'package:sakinah/core/crypto/signal_registration.dart';
 import 'package:sakinah/core/crypto/secure_store.dart';
 import 'package:sakinah/core/crypto/signal_session_service.dart';
 import 'package:sakinah/core/storage/signal_db.dart';
@@ -116,15 +119,19 @@ void main() {
   });
 
   test(
-      'signalSessionServiceProvider is null when signed in but device not yet registered',
+      'signalSessionServiceProvider self-heals: registers the device when not yet registered',
       () async {
-    // No saveDeviceNum() call: readDeviceNum() returns null, matching a
-    // signed-in user whose device registration hasn't completed yet.
+    // readDeviceNum() is null (device never registered — e.g. a restored
+    // session that skipped the sign-in screen). The provider must run
+    // ensureRegistered rather than returning null, so chat isn't stuck on
+    // "setting up secure chat" forever.
     final vault = KeyVault(InMemorySecureStore());
+    final registrar = _FakeRegistrar();
 
     final c = ProviderContainer(overrides: [
       signalDbProvider.overrideWith(_memoryDb),
       preKeyBundleSourceProvider.overrideWith((ref) => _NoopBundleSource()),
+      deviceRegistrarProvider.overrideWithValue(registrar),
       authSessionProvider
           .overrideWith((ref) => Stream.value(_signedInSession('test-user'))),
       keyVaultProvider.overrideWithValue(vault),
@@ -134,6 +141,37 @@ void main() {
     await c.read(authSessionProvider.future);
 
     final service = await c.read(signalSessionServiceProvider.future);
-    expect(service, isNull);
+    expect(service, isA<SignalSessionService>());
+    expect(registrar.registerCalls, 1,
+        reason: 'self-heal must register the device');
+    expect(await vault.readDeviceNum(), isNotNull,
+        reason: 'the device number is persisted by the self-heal registration');
   });
+}
+
+/// Minimal DeviceRegistrar that lets ensureRegistered complete offline.
+class _FakeRegistrar implements DeviceRegistrar {
+  int registerCalls = 0;
+
+  @override
+  Future<int> register({
+    required String deviceId,
+    required int registrationId,
+    required Uint8List identityPub,
+    required int signedPrekeyId,
+    required Uint8List signedPrekeyPub,
+    required Uint8List signedPrekeySig,
+  }) async {
+    registerCalls++;
+    return 1;
+  }
+
+  @override
+  Future<void> uploadOneTimePrekeys({
+    required int deviceNum,
+    required Map<int, Uint8List> prekeys,
+  }) async {}
+
+  @override
+  Future<int> unconsumedPrekeyCount(int deviceNum) async => 20;
 }

@@ -43,12 +43,24 @@ final signalSessionServiceProvider =
   final selfUserId = session?.user.id;
   if (selfUserId == null) return null;
 
-  final selfDeviceNum = await ref.read(keyVaultProvider).readDeviceNum();
-  if (selfDeviceNum == null) return null;
+  final vault = ref.read(keyVaultProvider);
+  // If this device isn't registered yet, register it now. That happens for a
+  // session restored on launch (which never passes through the sign-in screen
+  // where ensureRegistered runs) or if that first registration failed.
+  // ensureRegistered is idempotent and returns this device's number, so the
+  // crypto layer self-heals instead of leaving chat stuck on "setting up secure
+  // chat" forever. If it throws (network/RPC), the error propagates so callers
+  // can surface it rather than silently masking it as "not ready".
+  final selfDeviceNum = await vault.readDeviceNum() ??
+      await ensureRegistered(
+        db: ref.read(signalDbProvider),
+        vault: vault,
+        registrar: ref.read(deviceRegistrarProvider),
+      );
 
   return SignalSessionService(
     db: ref.watch(signalDbProvider),
-    vault: ref.read(keyVaultProvider),
+    vault: vault,
     bundles: ref.read(preKeyBundleSourceProvider),
     selfUserId: selfUserId,
     selfDeviceNum: selfDeviceNum,
